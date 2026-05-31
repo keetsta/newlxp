@@ -1,0 +1,34 @@
+query StudentAvailableTasks($input: StudentAvailableTasksInput!) {
+  studentAvailableTasks(input: $input) {
+    page
+    perPage
+    total
+    totalPages
+    hasMore
+    items {
+      contentBlockId
+      kind
+      taskDeadline
+      passDate
+      testAvailableFrom
+      testAvailableTo
+      topic { id name isCheckPoint }
+      contentBlock {
+        ... on TaskDisciplineTopicContentBlock {
+          id
+          name
+          maxScore
+        }
+        ... on TestDisciplineTopicContentBlock {
+          id
+          name
+          maxScore
+        }
+        ... on InfoDisciplineTopicContentBlock {
+          id
+          name
+        }
+      }
+    }
+  }
+}

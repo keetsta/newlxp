@@ -1,0 +1,45 @@
+{
+  "schemaNamespace" : "LXPSchema",
+  "input" : {
+    "operationSearchPaths" : [
+      "NewLXP/GraphQL/**/*.graphql"
+    ],
+    "schemaSearchPaths" : [
+      "NewLXP/GraphQL/**/*.graphqls"
+    ]
+  },
+  "output" : {
+    "testMocks" : {
+      "none" : {
+      }
+    },
+    "schemaTypes" : {
+      "path" : "./NewLXP/GraphQL/LXPSchema",
+      "moduleType" : {
+        "embeddedInTarget" : {
+          "name" : "NewLXP",
+          "accessModifier" : "internal"
+        }
+      }
+    },
+    "operations" : {
+      "inSchemaModule" : {
+      }
+    }
+  },
+  "schemaDownloadConfiguration" : {
+    "downloadMethod" : {
+      "introspection" : {
+        "endpointURL" : "https://api.newlxp.ru/graphql",
+        "httpMethod" : { "POST" : {} },
+        "includeDeprecatedInputValues" : false,
+        "outputFormat" : "SDL"
+      }
+    },
+    "downloadTimeout" : 60,
+    "headers" : [
+      { "key" : "apollo-require-preflight", "value" : "true" }
+    ],
+    "outputPath" : "./NewLXP/GraphQL/LXPSchema/schema.graphqls"
+  }
+}

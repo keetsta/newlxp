@@ -1,0 +1,42 @@
+query ClassesForStudentProfile($input: ClassesForStudentProfileInput!, $studentId: UUID!) {
+  classesForStudentProfile(input: $input) {
+    id
+    from
+    to
+    name
+    isOnline
+    meetingLink
+    learningGroupId
+    learningGroup { id name }
+    classroom {
+      id
+      name
+      buildingArea { id name address }
+    }
+    discipline {
+      id
+      name
+      code
+    }
+    topics {
+      id
+      name
+      isCheckPoint
+    }
+    teachers {
+      id
+      user {
+        id
+        firstName
+        lastName
+        middleName
+      }
+    }
+    attendance(studentId: $studentId) {
+      id
+      status
+      lateStatus
+      reason
+    }
+  }
+}

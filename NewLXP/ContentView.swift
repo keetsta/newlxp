@@ -1,18 +1,19 @@
-//
-//  ContentView.swift
-//  NewLXP
-//
-//  Created by keet on 25.11.2025.
-//
-
 import SwiftUI
 
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Text("Hiiii :3")
+        TabView {
+            Tab("Главная", systemImage: "house") {
+                HomeView()
+            }
+            Tab("Расписание", systemImage: "calendar") {
+                ScheduleView()
+            }
+            Tab("Сервисы", systemImage: "square.grid.2x2") {
+                ServicesView()
+            }
         }
-        .padding()
+        .tabBarMinimizeBehavior(.onScrollDown)
     }
 }
 

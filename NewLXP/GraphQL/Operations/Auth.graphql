@@ -1,0 +1,17 @@
+query SignIn($input: SignInInput!) {
+  signIn(input: $input) {
+    accessToken
+    refreshToken
+    user {
+      id
+      isLead
+    }
+  }
+}
+
+query RefreshToken($input: RefreshTokenInput!) {
+  refreshToken(input: $input) {
+    accessToken
+    refreshToken
+  }
+}

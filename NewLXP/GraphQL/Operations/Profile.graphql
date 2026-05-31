@@ -1,0 +1,43 @@
+query GetMe {
+  getMe {
+    id
+    email
+    firstName
+    lastName
+    middleName
+    avatar
+    isLead
+    student {
+      id
+      learningGroups {
+        id
+        learningGroup {
+          id
+          name
+          suborganization {
+            id
+            name
+          }
+        }
+      }
+      studentSpecialties {
+        specialtyId
+        specialty {
+          id
+          name
+          code
+          suborganization {
+            id
+            name
+          }
+        }
+      }
+      suborganizations_V2 {
+        suborganization {
+          id
+          name
+        }
+      }
+    }
+  }
+}

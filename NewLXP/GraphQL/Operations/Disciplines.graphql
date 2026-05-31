@@ -1,0 +1,56 @@
+query StudentDisciplinesByClasses($input: StudentDisciplinesThroughClassesWithPaginationInput!) {
+  studentDisciplinesThroughClassesWithPagination(input: $input) {
+    page
+    perPage
+    total
+    totalPages
+    hasMore
+    items {
+      id
+      name
+      code
+      studyHoursCount
+      maxScore
+    }
+  }
+}
+
+query GetStudentDiscipline($input: GetStudentDisciplineInput!) {
+  getStudentDiscipline(input: $input) {
+    discipline {
+      id
+      name
+      code
+      studyHoursCount
+      maxScore
+    }
+    learningGroupId
+    sectionId
+    disciplineScore
+    averageAttendance {
+      allAttendance
+      currentAttendance
+      currentExistAttendance
+      percent
+    }
+    averageScores {
+      currentScores
+      maxScore
+      grade
+      deadlineScores
+    }
+    topics {
+      topicId
+      topic {
+        id
+        name
+        order
+        isCheckPoint
+        maxScore
+        studyHoursCount
+      }
+      status
+      topicScore
+    }
+  }
+}
