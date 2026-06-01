@@ -1801,7 +1801,7 @@ struct AboutView: View {
                 .font(.system(size: 36, weight: .semibold))
                 .frame(width: 88, height: 88)
                 .lxpGlass(cornerRadius: 22)
-            Text("LXP IThub").font(.title3.weight(.semibold))
+            Text("NewLXP").font(.title3.weight(.semibold))
             Text("Версия \(marketingVersion) (build \(buildNumber))")
                 .font(.footnote)
                 .foregroundStyle(.secondary)

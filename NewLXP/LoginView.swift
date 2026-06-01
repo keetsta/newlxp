@@ -17,7 +17,7 @@ struct LoginView: View {
                     .foregroundStyle(.primary)
                     .frame(width: 72, height: 72)
                     .lxpGlassCircle()
-                Text("LXP IThub")
+                Text("NewLXP")
                     .font(.title.weight(.semibold))
                 Text("Вход для студентов")
                     .font(.subheadline)
