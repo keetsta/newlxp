@@ -319,7 +319,7 @@ enum TasksRepository {
             return Assignment(
                 id: item.contentBlockId,
                 title: resolvedTitle,
-                discipline: "",
+                discipline: item.topic.chapter.discipline.name,
                 topic: item.topic.name,
                 topicId: item.topic.id,
                 deadline: deadline,

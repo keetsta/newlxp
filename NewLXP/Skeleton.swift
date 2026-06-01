@@ -1,40 +1,52 @@
 import SwiftUI
 
-/// Shimmer-плейсхолдер на время загрузки. Используется когда стор пустой
-/// и идёт активный запрос — чтобы вьюха не моргала «ничего нет».
+/// Shimmer-плейсхолдер на время загрузки. Рисуется как RoundedRect с заливкой
+/// secondary.opacity и бликом, бегущим слева направо. Цикл бесшовный: блик
+/// уезжает за правый край и появляется слева в одной фазе; никаких видимых
+/// прыжков. Все скелетоны на экране синхронизированы через общий `TimelineView`.
 struct SkeletonRect: View {
     var height: CGFloat = 16
     var cornerRadius: CGFloat = 6
 
-    @State private var phase: CGFloat = -1
-
     var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.secondary.opacity(0.18))
-            .overlay(
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            shimmer(at: context.date)
+        }
+        .frame(height: height)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+
+    /// Расчёт фазы 0..1 от текущего момента — общий tick для всех скелетонов
+    /// на экране, поэтому блики идут синхронно. Период 1.5 сек.
+    private func shimmer(at date: Date) -> some View {
+        let period: TimeInterval = 1.5
+        let phase = (date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period)) / period
+        return GeometryReader { geo in
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.secondary.opacity(0.18))
+
                 LinearGradient(
                     gradient: Gradient(colors: [
                         .clear,
-                        .white.opacity(0.25),
+                        .white.opacity(0.35),
                         .clear
                     ]),
                     startPoint: .leading,
                     endPoint: .trailing
                 )
-                .offset(x: phase * 200)
+                // Полоса блика шириной 0.5 ширины контейнера движется от
+                // -0.5 (полностью слева) до 1.0 (полностью справа за правым
+                // краем). На -0.5 и 1.0 блик невидим, так что цикл бесшовный.
+                .frame(width: geo.size.width * 0.5, height: geo.size.height)
+                .offset(x: -geo.size.width * 0.5 + (geo.size.width * 1.5) * CGFloat(phase))
                 .blendMode(.plusLighter)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .frame(height: height)
-            .onAppear {
-                withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) {
-                    phase = 1.5
-                }
             }
+        }
     }
 }
 
-/// Вьюха-карточка скелетон-варианта строки урока для расписания/главной.
+/// Скелетон-вариант строки урока для расписания/главной.
 struct SkeletonLessonRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {

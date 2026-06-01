@@ -12,7 +12,17 @@ query StudentAvailableTasks($input: StudentAvailableTasksInput!) {
       passDate
       testAvailableFrom
       testAvailableTo
-      topic { id name isCheckPoint }
+      topic {
+        id
+        name
+        isCheckPoint
+        chapter {
+          discipline {
+            id
+            name
+          }
+        }
+      }
       contentBlock {
         ... on TaskDisciplineTopicContentBlock {
           id

@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "StudentAvailableTasks"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query StudentAvailableTasks($input: StudentAvailableTasksInput!) { studentAvailableTasks(input: $input) { __typename page perPage total totalPages hasMore items { __typename contentBlockId kind taskDeadline passDate testAvailableFrom testAvailableTo topic { __typename id name isCheckPoint } contentBlock { __typename ... on TaskDisciplineTopicContentBlock { id name maxScore } ... on TestDisciplineTopicContentBlock { id name maxScore } ... on InfoDisciplineTopicContentBlock { id name } } } } }"#
+        #"query StudentAvailableTasks($input: StudentAvailableTasksInput!) { studentAvailableTasks(input: $input) { __typename page perPage total totalPages hasMore items { __typename contentBlockId kind taskDeadline passDate testAvailableFrom testAvailableTo topic { __typename id name isCheckPoint chapter { __typename discipline { __typename id name } } } contentBlock { __typename ... on TaskDisciplineTopicContentBlock { id name maxScore } ... on TestDisciplineTopicContentBlock { id name maxScore } ... on InfoDisciplineTopicContentBlock { id name } } } } }"#
       ))
 
     public var input: StudentAvailableTasksInput
@@ -109,6 +109,7 @@ extension LXPSchema {
               .field("id", LXPSchema.UUID.self),
               .field("name", String.self),
               .field("isCheckPoint", Bool.self),
+              .field("chapter", Chapter.self),
             ] }
             static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
               StudentAvailableTasksQuery.Data.StudentAvailableTasks.Item.Topic.self
@@ -117,6 +118,47 @@ extension LXPSchema {
             var id: LXPSchema.UUID { __data["id"] }
             var name: String { __data["name"] }
             var isCheckPoint: Bool { __data["isCheckPoint"] }
+            var chapter: Chapter { __data["chapter"] }
+
+            /// StudentAvailableTasks.Item.Topic.Chapter
+            ///
+            /// Parent Type: `DisciplineChapter`
+            struct Chapter: LXPSchema.SelectionSet {
+              let __data: DataDict
+              init(_dataDict: DataDict) { __data = _dataDict }
+
+              static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.DisciplineChapter }
+              static var __selections: [ApolloAPI.Selection] { [
+                .field("__typename", String.self),
+                .field("discipline", Discipline.self),
+              ] }
+              static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                StudentAvailableTasksQuery.Data.StudentAvailableTasks.Item.Topic.Chapter.self
+              ] }
+
+              var discipline: Discipline { __data["discipline"] }
+
+              /// StudentAvailableTasks.Item.Topic.Chapter.Discipline
+              ///
+              /// Parent Type: `Discipline`
+              struct Discipline: LXPSchema.SelectionSet {
+                let __data: DataDict
+                init(_dataDict: DataDict) { __data = _dataDict }
+
+                static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.Discipline }
+                static var __selections: [ApolloAPI.Selection] { [
+                  .field("__typename", String.self),
+                  .field("id", LXPSchema.UUID.self),
+                  .field("name", String.self),
+                ] }
+                static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                  StudentAvailableTasksQuery.Data.StudentAvailableTasks.Item.Topic.Chapter.Discipline.self
+                ] }
+
+                var id: LXPSchema.UUID { __data["id"] }
+                var name: String { __data["name"] }
+              }
+            }
           }
 
           /// StudentAvailableTasks.Item.ContentBlock

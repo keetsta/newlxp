@@ -127,6 +127,26 @@ struct AssignmentsView: View {
         }
     }
 
+    /// Группы заданий по дисциплине. Внутри группы — по дедлайну (ближайший первый),
+    /// сами группы — по ближайшему дедлайну в группе. Задания без названия
+    /// дисциплины сваливаются в «Прочее» в самый низ.
+    private var groups: [(discipline: String, items: [Assignment])] {
+        let buckets = Dictionary(grouping: items) { a in
+            a.discipline.isEmpty ? "Прочее" : a.discipline
+        }
+        return buckets
+            .map { (key, list) in
+                (key, list.sorted { $0.deadline < $1.deadline })
+            }
+            .sorted { lhs, rhs in
+                if lhs.0 == "Прочее" { return false }
+                if rhs.0 == "Прочее" { return true }
+                let l = lhs.1.first?.deadline ?? .distantFuture
+                let r = rhs.1.first?.deadline ?? .distantFuture
+                return l < r
+            }
+    }
+
     /// Стор пустой и сетевая загрузка ещё не отработала — показываем скелетоны.
     private var isInitialLoad: Bool {
         store.assignments.isEmpty && store.lastError == nil
@@ -143,16 +163,35 @@ struct AssignmentsView: View {
                         emptyState
                     }
                 } else {
-                    ForEach(items) { item in
-                        if let id = item.topicId, !id.isEmpty {
-                            NavigationLink {
-                                TopicDetailView(topicId: id, fallbackTitle: item.title)
-                            } label: {
-                                AssignmentCard(assignment: item)
+                    ForEach(groups, id: \.discipline) { group in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(group.discipline)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                                    .tracking(0.5)
+                                    .textCase(.uppercase)
+                                Spacer()
+                                Text("\(group.items.count)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                                    .monospacedDigit()
                             }
-                            .buttonStyle(.plain)
-                        } else {
-                            AssignmentCard(assignment: item)
+                            .padding(.horizontal, 4)
+                            VStack(spacing: 8) {
+                                ForEach(group.items) { item in
+                                    if let id = item.topicId, !id.isEmpty {
+                                        NavigationLink {
+                                            TopicDetailView(topicId: id, fallbackTitle: item.title)
+                                        } label: {
+                                            AssignmentCard(assignment: item)
+                                        }
+                                        .buttonStyle(.plain)
+                                    } else {
+                                        AssignmentCard(assignment: item)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -217,18 +256,18 @@ struct AssignmentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                if !assignment.discipline.isEmpty {
-                    Text(assignment.discipline.uppercased())
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.5)
-                        .lineLimit(1)
-                } else if !assignment.topic.isEmpty {
-                    Text(assignment.topic.uppercased())
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.5)
-                        .lineLimit(1)
+                // В шапке — тема, к которой относится задание (дисциплина уже
+                // в заголовке группы выше).
+                if !assignment.topic.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.text")
+                            .font(.caption2.weight(.semibold))
+                        Text(assignment.topic)
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(.secondary)
+                    .tracking(0.3)
                 }
                 Spacer()
                 statusPill
@@ -914,10 +953,19 @@ struct GradeRow: View {
                 Text(topic.title)
                     .font(.subheadline)
                     .lineLimit(2)
-                Text(topic.status.label)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(topic.status.tint)
-                    .tracking(0.4)
+                HStack(spacing: 6) {
+                    if !topic.number.isEmpty {
+                        Text("Тема \(topic.number)")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                        Text("·").foregroundStyle(.tertiary)
+                    }
+                    Text(topic.status.label)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(topic.status.tint)
+                        .tracking(0.4)
+                }
             }
             Spacer()
             if let s = topic.score, let m = topic.maxScore, m > 0 {
