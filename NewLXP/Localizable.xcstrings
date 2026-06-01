@@ -92,6 +92,16 @@
         }
       }
     },
+    "%lld %@" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld %2$@"
+          }
+        }
+      }
+    },
     "%lld пара" : {
 
     },
@@ -104,6 +114,9 @@
           }
         }
       }
+    },
+    "%lld сдано" : {
+
     },
     "%lld ч" : {
 
@@ -136,10 +149,10 @@
     "E-mail" : {
 
     },
-    "LXP IThub" : {
+    "made by keet" : {
 
     },
-    "made by keet" : {
+    "NewLXP" : {
 
     },
     "Баллов пока нет" : {
