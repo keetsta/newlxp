@@ -54,7 +54,7 @@ enum DiskCache {
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
-            print("[Cache] decode \(key.rawValue) failed: \(error)")
+            LXPLog.debug("[Cache] decode \(key.rawValue) failed: \(error)")
             try? FileManager.default.removeItem(at: url)
             return nil
         }
@@ -66,7 +66,7 @@ enum DiskCache {
             let data = try encoder.encode(value)
             try data.write(to: url, options: .atomic)
         } catch {
-            print("[Cache] encode \(key.rawValue) failed: \(error)")
+            LXPLog.debug("[Cache] encode \(key.rawValue) failed: \(error)")
         }
     }
 

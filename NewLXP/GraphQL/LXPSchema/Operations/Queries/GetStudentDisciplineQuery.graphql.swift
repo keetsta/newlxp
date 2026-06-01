@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "GetStudentDiscipline"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query GetStudentDiscipline($input: GetStudentDisciplineInput!) { getStudentDiscipline(input: $input) { __typename discipline { __typename id name code studyHoursCount maxScore actualMaxScoreInTopics } scoreForAnsweredTasks maxScoreForAnsweredTasks learningGroupId sectionId topics { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount } status topicScore } } }"#
+        #"query GetStudentDiscipline($input: GetStudentDisciplineInput!) { getStudentDiscipline(input: $input) { __typename discipline { __typename id name code studyHoursCount maxScore } scoreForAnsweredTasks maxScoreForAnsweredTasks learningGroupId sectionId topics { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount } status topicScore } } }"#
       ))
 
     public var input: GetStudentDisciplineInput
@@ -77,7 +77,6 @@ extension LXPSchema {
             .field("code", String?.self),
             .field("studyHoursCount", Double.self),
             .field("maxScore", Double.self),
-            .field("actualMaxScoreInTopics", Double?.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
             GetStudentDisciplineQuery.Data.GetStudentDiscipline.Discipline.self
@@ -88,7 +87,6 @@ extension LXPSchema {
           var code: String? { __data["code"] }
           var studyHoursCount: Double { __data["studyHoursCount"] }
           var maxScore: Double { __data["maxScore"] }
-          var actualMaxScoreInTopics: Double? { __data["actualMaxScoreInTopics"] }
         }
 
         /// GetStudentDiscipline.Topic

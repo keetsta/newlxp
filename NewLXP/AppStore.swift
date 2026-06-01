@@ -366,7 +366,7 @@ final class AppStore: ObservableObject {
         // Первый запуск: сначала получим studentId через профиль.
         await loadProfile()
         guard let studentId = TokenStore.studentId, !studentId.isEmpty else {
-            print("[LXP] refreshAll: no studentId after loadProfile, skipping the rest")
+            LXPLog.debug("[LXP] refreshAll: no studentId after loadProfile, skipping the rest")
             return
         }
         await withTaskGroup(of: Void.self) { group in
@@ -384,10 +384,10 @@ final class AppStore: ObservableObject {
             TokenStore.userId = me.userId
             TokenStore.studentId = me.studentId
             DiskCache.save(.profile, me.profile)
-            print("[LXP] loadProfile OK studentId=\(me.studentId ?? "nil") mates=\(me.profile.groupMates.count)")
+            LXPLog.debug("[LXP] loadProfile OK studentId=\(me.studentId ?? "nil") mates=\(me.profile.groupMates.count)")
         } catch {
-            self.lastError = "profile: \(error.localizedDescription)"
-            print("[LXP] loadProfile FAIL \(error)")
+            self.lastError = error.localizedDescription
+            LXPLog.debug("[LXP] loadProfile FAIL \(error)")
         }
     }
 
@@ -416,10 +416,10 @@ final class AppStore: ObservableObject {
             self.loadedRanges.append(interval)
             DiskCache.save(.lessonsByDay, self.lessonsByDay)
             DiskCache.save(.loadedRanges, self.loadedRanges)
-            print("[LXP] loadSchedule OK \(lessons.count) lessons in \(from)..\(to)")
+            LXPLog.debug("[LXP] loadSchedule OK \(lessons.count) lessons in \(from)..\(to)")
         } catch {
-            self.lastError = "schedule: \(error.localizedDescription)"
-            print("[LXP] loadSchedule FAIL \(error)")
+            self.lastError = error.localizedDescription
+            LXPLog.debug("[LXP] loadSchedule FAIL \(error)")
         }
     }
 
@@ -484,10 +484,10 @@ final class AppStore: ObservableObject {
             }
             self.disciplines = order.compactMap { byTitle[$0] }
             DiskCache.save(.disciplines, self.disciplines)
-            print("[LXP] loadDisciplines OK \(list.count) raw → \(self.disciplines.count) unique")
+            LXPLog.debug("[LXP] loadDisciplines OK \(list.count) raw → \(self.disciplines.count) unique")
         } catch {
-            self.lastError = "disciplines: \(error.localizedDescription)"
-            print("[LXP] loadDisciplines FAIL \(error)")
+            self.lastError = error.localizedDescription
+            LXPLog.debug("[LXP] loadDisciplines FAIL \(error)")
         }
     }
 
@@ -497,10 +497,10 @@ final class AppStore: ObservableObject {
             let d = try await DisciplinesRepository.detail(studentId: studentId, disciplineId: disciplineId)
             self.disciplineDetails[disciplineId] = d
             DiskCache.save(.disciplineDetails, self.disciplineDetails)
-            print("[LXP] loadDisciplineDetail OK \(disciplineId) topics=\(d.topics.count)")
+            LXPLog.debug("[LXP] loadDisciplineDetail OK \(disciplineId) topics=\(d.topics.count)")
         } catch {
-            self.lastError = "disciplineDetail: \(error.localizedDescription)"
-            print("[LXP] loadDisciplineDetail FAIL \(error)")
+            self.lastError = error.localizedDescription
+            LXPLog.debug("[LXP] loadDisciplineDetail FAIL \(error)")
         }
     }
 
@@ -525,10 +525,10 @@ final class AppStore: ObservableObject {
             let t = try await TopicRepository.detail(studentId: studentId, topicId: topicId)
             self.topicDetails[topicId] = t
             DiskCache.save(.topicDetails, self.topicDetails)
-            print("[LXP] loadTopicDetail OK \(topicId) blocks=\(t.blocks.count)")
+            LXPLog.debug("[LXP] loadTopicDetail OK \(topicId) blocks=\(t.blocks.count)")
         } catch {
-            self.lastError = "topic: \(error.localizedDescription)"
-            print("[LXP] loadTopicDetail FAIL \(error)")
+            self.lastError = error.localizedDescription
+            LXPLog.debug("[LXP] loadTopicDetail FAIL \(error)")
         }
     }
 
@@ -537,10 +537,10 @@ final class AppStore: ObservableObject {
             let list = try await TasksRepository.availableTasks(studentId: studentId)
             self.assignments = list
             DiskCache.save(.assignments, list)
-            print("[LXP] loadAssignments OK \(list.count)")
+            LXPLog.debug("[LXP] loadAssignments OK \(list.count)")
         } catch {
-            self.lastError = "assignments: \(error.localizedDescription)"
-            print("[LXP] loadAssignments FAIL \(error)")
+            self.lastError = error.localizedDescription
+            LXPLog.debug("[LXP] loadAssignments FAIL \(error)")
         }
     }
 
@@ -555,12 +555,12 @@ final class AppStore: ObservableObject {
             TokenStore.accessToken = r.accessToken
             TokenStore.refreshToken = r.refreshToken
             TokenStore.userId = r.userId
-            print("[LXP] signIn OK userId=\(r.userId)")
+            LXPLog.debug("[LXP] signIn OK userId=\(r.userId)")
             self.isAuthenticated = true
             await self.refreshAll()
         } catch {
             self.authError = error.localizedDescription
-            print("[LXP] signIn FAIL \(error)")
+            LXPLog.debug("[LXP] signIn FAIL \(error)")
         }
     }
 

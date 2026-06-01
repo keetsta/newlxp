@@ -70,26 +70,22 @@ struct Discipline: Identifiable, Hashable, Codable {
     /// Полный максимум баллов за дисциплину (нормировка от сервера). Обычно 100,
     /// но для коротких курсов бывает 80, 70 и т.д.
     var maxScore: Double = 0
-    /// Сумма maxScore только тех тем, по которым уже выставлены оценки.
-    /// Знаменатель оценки 2-5 на сайте ITHub — именно этот.
-    var actualMaxScore: Double? = nil
 
-    init(id: String = UUID().uuidString, title: String, code: String?, totalHours: Int, maxScore: Double = 0, actualMaxScore: Double? = nil) {
+    init(id: String = UUID().uuidString, title: String, code: String?, totalHours: Int, maxScore: Double = 0) {
         self.id = id
         self.title = title
         self.code = code
         self.totalHours = totalHours
         self.maxScore = maxScore
-        self.actualMaxScore = actualMaxScore
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, code, totalHours, maxScore, actualMaxScore
+        case id, title, code, totalHours, maxScore
     }
 
-    /// Кастомный декодер — `maxScore`/`actualMaxScore` появились позже, в старых
-    /// JSON-кэшах их нет. Если поля не хватает, подставляем дефолт, чтобы кэш
-    /// не выкидывался целиком.
+    /// Кастомный декодер — `maxScore` появилось позже, в старых JSON-кэшах
+    /// его нет. Если поля не хватает, подставляем 0, чтобы кэш не выкидывался
+    /// целиком.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.id = try c.decode(String.self, forKey: .id)
@@ -97,7 +93,6 @@ struct Discipline: Identifiable, Hashable, Codable {
         self.code = try c.decodeIfPresent(String.self, forKey: .code)
         self.totalHours = try c.decode(Int.self, forKey: .totalHours)
         self.maxScore = try c.decodeIfPresent(Double.self, forKey: .maxScore) ?? 0
-        self.actualMaxScore = try c.decodeIfPresent(Double.self, forKey: .actualMaxScore)
     }
 }
 
@@ -291,7 +286,6 @@ struct Profile: Hashable, Codable {
     let email: String
     let avatar: String?
     let organization: String
-    let department: String
     let group: String
     let speciality: String
     let learningGroupId: String?

@@ -43,6 +43,8 @@ struct HomeView: View {
                 heroCard(lesson: lesson, leading: minutes > 0 ? "Через \(formatMinutesAsCountdown(minutes))" : "Скоро")
             }
             .buttonStyle(.plain)
+        } else if isInitialLoad {
+            heroSkeleton
         } else {
             GlassCard {
                 VStack(alignment: .leading, spacing: 8) {
@@ -51,6 +53,32 @@ struct HomeView: View {
                     Text("Хорошего отдыха")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// Стор пустой и сетевая загрузка ещё не отработала — показываем скелетоны
+    /// вместо «ничего нет», чтобы холодный старт не выглядел как сломанный экран.
+    private var isInitialLoad: Bool {
+        store.lessonsByDay.isEmpty && store.lastError == nil
+    }
+
+    private var heroSkeleton: some View {
+        GlassCard(padding: 20, corner: 28) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    SkeletonRect(height: 10, cornerRadius: 4).frame(width: 90)
+                    Spacer()
+                    SkeletonRect(height: 18, cornerRadius: 9).frame(width: 60)
+                }
+                SkeletonRect(height: 22).frame(maxWidth: 240)
+                SkeletonRect(height: 14).frame(maxWidth: .infinity)
+                Divider().opacity(0.5)
+                HStack(spacing: 10) {
+                    SkeletonRect(height: 12, cornerRadius: 4).frame(width: 80)
+                    SkeletonRect(height: 12, cornerRadius: 4).frame(width: 120)
+                    Spacer()
                 }
             }
         }
@@ -139,17 +167,26 @@ struct HomeView: View {
 
     private var todaySchedule: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Сегодня", trailing: "\(lessons.count) \(RussianPlural.pairs(lessons.count))")
+            SectionHeader(title: "Сегодня", trailing: lessons.isEmpty && isInitialLoad ? "" : "\(lessons.count) \(RussianPlural.pairs(lessons.count))")
             VStack(spacing: 0) {
-                ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
-                    NavigationLink(value: lesson) {
-                        LessonRow(lesson: lesson)
+                if lessons.isEmpty && isInitialLoad {
+                    ForEach(0..<3, id: \.self) { i in
+                        SkeletonLessonRow()
+                        if i < 2 {
+                            Divider().padding(.leading, 16).opacity(0.4)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    if index < lessons.count - 1 {
-                        Divider()
-                            .padding(.leading, 16)
-                            .opacity(0.4)
+                } else {
+                    ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
+                        NavigationLink(value: lesson) {
+                            LessonRow(lesson: lesson)
+                        }
+                        .buttonStyle(.plain)
+                        if index < lessons.count - 1 {
+                            Divider()
+                                .padding(.leading, 16)
+                                .opacity(0.4)
+                        }
                     }
                 }
             }

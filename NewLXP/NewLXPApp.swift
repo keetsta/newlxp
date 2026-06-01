@@ -26,13 +26,19 @@ struct RootView: View {
     @EnvironmentObject private var store: AppStore
 
     var body: some View {
-        Group {
-            if store.isAuthenticated {
-                ContentView()
-            } else {
-                LoginView(store: store)
+        ZStack(alignment: .top) {
+            Group {
+                if store.isAuthenticated {
+                    ContentView()
+                } else {
+                    LoginView(store: store)
+                }
             }
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.isAuthenticated)
+
+            // Транзиентный баннер для сетевых ошибок поверх контента.
+            ErrorBanner()
+                .allowsHitTesting(store.lastError != nil)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.isAuthenticated)
     }
 }

@@ -127,12 +127,21 @@ struct AssignmentsView: View {
         }
     }
 
+    /// Стор пустой и сетевая загрузка ещё не отработала — показываем скелетоны.
+    private var isInitialLoad: Bool {
+        store.assignments.isEmpty && store.lastError == nil
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 filtersRow
                 if items.isEmpty {
-                    emptyState
+                    if isInitialLoad {
+                        ForEach(0..<3, id: \.self) { _ in SkeletonAssignmentCard() }
+                    } else {
+                        emptyState
+                    }
                 } else {
                     ForEach(items) { item in
                         if let id = item.topicId, !id.isEmpty {
@@ -280,11 +289,19 @@ struct DisciplinesView: View {
         return active.filter { $0.title.localizedCaseInsensitiveContains(query) }
     }
 
+    private var isInitialLoad: Bool {
+        store.disciplines.isEmpty && store.lastError == nil
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 if items.isEmpty {
-                    emptyState
+                    if isInitialLoad {
+                        ForEach(0..<5, id: \.self) { _ in SkeletonDisciplineCard() }
+                    } else {
+                        emptyState
+                    }
                 } else {
                     ForEach(items) { discipline in
                         NavigationLink {

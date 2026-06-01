@@ -92,15 +92,15 @@ enum EditorJSParser {
             }()
             let caption = (payload["caption"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             guard let raw = urlString, !raw.isEmpty else {
-                print("[LXP][img] empty url in image block: \(payload)")
+                LXPLog.debug("[LXP][img] empty url in image block: \(payload)")
                 return .unsupported(type: "image-empty")
             }
             let absolute = raw.hasPrefix("//") ? "https:" + raw : raw
             guard let url = URL(string: absolute) else {
-                print("[LXP][img] invalid url: \(absolute)")
+                LXPLog.debug("[LXP][img] invalid url: \(absolute)")
                 return .unsupported(type: "image-bad-url")
             }
-            print("[LXP][img] parsed image block url=\(url.absoluteString)")
+            LXPLog.debug("[LXP][img] parsed image block url=\(url.absoluteString)")
             return .image(url: url, caption: caption)
         case "embed":
             // data: { service, source, embed, caption }
@@ -109,7 +109,7 @@ enum EditorJSParser {
             let caption = (payload["caption"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             return .embed(url: url, caption: caption)
         default:
-            print("[LXP][editor] unsupported block type=\(type) payload=\(payload)")
+            LXPLog.debug("[LXP][editor] unsupported block type=\(type) payload=\(payload)")
             return .unsupported(type: type)
         }
     }
@@ -349,17 +349,17 @@ final class RemoteImageLoader {
                 let (data, response) = try await URLSession.shared.data(for: req)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                 if status >= 400 {
-                    print("[LXP][img] HTTP \(status) \(url.absoluteString)")
+                    LXPLog.debug("[LXP][img] HTTP \(status) \(url.absoluteString)")
                     return nil
                 }
                 guard let img = UIImage(data: data) else {
-                    print("[LXP][img] decode failed (\(data.count) bytes) \(url.absoluteString)")
+                    LXPLog.debug("[LXP][img] decode failed (\(data.count) bytes) \(url.absoluteString)")
                     return nil
                 }
                 self.cache[url] = img
                 return img
             } catch {
-                print("[LXP][img] error \(error.localizedDescription) \(url.absoluteString)")
+                LXPLog.debug("[LXP][img] error \(error.localizedDescription) \(url.absoluteString)")
                 return nil
             }
         }

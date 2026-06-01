@@ -73,7 +73,6 @@ enum ProfileRepository {
             email: me.email,
             avatar: me.avatar,
             organization: suborg,
-            department: "",
             group: group,
             speciality: speciality,
             learningGroupId: learningGroupId,
@@ -193,8 +192,7 @@ enum DisciplinesRepository {
             title: d.discipline.name,
             code: d.discipline.code,
             totalHours: Int(d.discipline.studyHoursCount.rounded()),
-            maxScore: d.discipline.maxScore,
-            actualMaxScore: d.discipline.actualMaxScoreInTopics
+            maxScore: d.discipline.maxScore
         )
         let topics: [Topic] = d.topics
             .sorted { ($0.topic.order) < ($1.topic.order) }

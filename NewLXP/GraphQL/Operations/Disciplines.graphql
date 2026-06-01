@@ -24,7 +24,6 @@ query GetStudentDiscipline($input: GetStudentDisciplineInput!) {
       code
       studyHoursCount
       maxScore
-      actualMaxScoreInTopics
     }
     scoreForAnsweredTasks
     maxScoreForAnsweredTasks

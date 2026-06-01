@@ -9,7 +9,6 @@ enum MockData {
         email: "",
         avatar: nil,
         organization: "",
-        department: "",
         group: "",
         speciality: "",
         learningGroupId: nil,

@@ -131,13 +131,13 @@ extension ApolloClient {
             guard let data = response.data else { throw LXPError.decoding }
             return data
         } catch let urlError as URLError {
-            print("[LXP] URLError code=\(urlError.code.rawValue) desc=\(urlError.localizedDescription) host=\(urlError.failingURL?.host ?? "?")")
+            LXPLog.debug("[LXP] URLError code=\(urlError.code.rawValue) desc=\(urlError.localizedDescription) host=\(urlError.failingURL?.host ?? "?")")
             throw LXPError.server("\(urlError.localizedDescription) (code \(urlError.code.rawValue))")
         } catch let error as LXPError {
-            print("[LXP] LXPError: \(error.localizedDescription)")
+            LXPLog.debug("[LXP] LXPError: \(error.localizedDescription)")
             throw error
         } catch {
-            print("[LXP] Other error: \(error)")
+            LXPLog.debug("[LXP] Other error: \(error)")
             throw error
         }
     }
@@ -173,7 +173,7 @@ private actor TokenRefreshCoordinator {
 private func refreshAccessToken() async throws -> Bool {
     do {
         let ok = try await TokenRefreshCoordinator.shared.refresh()
-        print("[LXP] token refresh \(ok ? "OK" : "skipped")")
+        LXPLog.debug("[LXP] token refresh \(ok ? "OK" : "skipped")")
         if !ok {
             // refreshToken отсутствует или пуст — токены протухли окончательно.
             await MainActor.run {
@@ -183,7 +183,7 @@ private func refreshAccessToken() async throws -> Bool {
         }
         return ok
     } catch {
-        print("[LXP] token refresh FAIL: \(error.localizedDescription)")
+        LXPLog.debug("[LXP] token refresh FAIL: \(error.localizedDescription)")
         // refreshToken тоже отвергнут сервером — выкидываем юзера на логин.
         await MainActor.run {
             TokenStore.clear()

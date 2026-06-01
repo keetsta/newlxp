@@ -193,12 +193,36 @@ struct ScheduleView: View {
 
     // MARK: - Lessons
 
+    /// Расписание ещё ни разу не загружалось (стор пустой) и нет ошибки.
+    /// Только в этом случае показываем скелетоны — пустой день после загрузки
+    /// (выходной/каникулы) — это нормальный empty state.
+    private var isInitialLoad: Bool {
+        store.lessonsByDay.isEmpty && store.lastError == nil
+    }
+
     private var lessonList: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: dateTitle, trailing: lessons.isEmpty ? "" : "\(lessons.count) \(RussianPlural.pairs(lessons.count))")
                 .padding(.horizontal, 18)
             if lessons.isEmpty {
-                emptyState
+                if isInitialLoad {
+                    VStack(spacing: 0) {
+                        ForEach(0..<3, id: \.self) { i in
+                            SkeletonLessonRow()
+                            if i < 2 {
+                                Divider().padding(.leading, 16).opacity(0.4)
+                            }
+                        }
+                    }
+                    .background {
+                        RoundedRectangle(cornerRadius: 24).fill(Color.clear)
+                            .lxpGlass(cornerRadius: 24)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .padding(.horizontal, 18)
+                } else {
+                    emptyState
+                }
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
