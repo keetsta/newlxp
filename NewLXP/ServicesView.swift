@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ServicesView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     @State private var showSettings = false
 
     var body: some View {
@@ -41,10 +41,10 @@ struct ServicesView: View {
             ProfileView()
         } label: {
             HStack(spacing: 14) {
-                Text(initials)
-                    .font(.headline.weight(.semibold))
-                    .frame(width: 52, height: 52)
-                    .glassEffect(.regular, in: .circle)
+                AvatarView(avatarPath: store.profile.avatar,
+                           initials: initials,
+                           size: 52,
+                           fontSize: 17)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(store.profile.lastName) \(store.profile.firstName)")
                         .font(.headline)
@@ -58,7 +58,7 @@ struct ServicesView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(16)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .lxpGlass(cornerRadius: 22)
         }
         .buttonStyle(.plain)
     }
@@ -85,7 +85,7 @@ struct ServicesView: View {
     private var menu: some View {
         VStack(spacing: 0) {
             NavigationLink { DiaryView() } label: {
-                DisclosureRow(title: "Дневник", subtitle: "История посещаемости и тем", symbol: "book.closed")
+                DisclosureRow(title: "Успеваемость", subtitle: "Баллы и оценки по дисциплинам", symbol: "graduationcap")
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
             }
@@ -107,14 +107,14 @@ struct ServicesView: View {
             }
             .buttonStyle(.plain)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 }
 
 // MARK: - Assignments
 
 struct AssignmentsView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     @State private var query = ""
     @State private var filter: AssignmentStatus? = nil
 
@@ -181,7 +181,7 @@ struct AssignmentsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 }
 
@@ -196,8 +196,7 @@ struct FilterPill: View {
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .glassEffect(isSelected ? .regular.tint(.primary.opacity(0.18)) : .regular,
-                              in: .capsule)
+                .lxpGlassCapsule(tint: isSelected ? .primary.opacity(0.18) : nil)
         }
         .buttonStyle(.plain)
     }
@@ -237,7 +236,7 @@ struct AssignmentCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 
     private var deadlineText: String {
@@ -255,7 +254,7 @@ struct AssignmentCard: View {
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .glassEffect(.regular, in: .capsule)
+            .lxpGlassCapsule()
     }
 }
 
@@ -272,12 +271,13 @@ struct AssignmentDetailView: View {
 // MARK: - Disciplines
 
 struct DisciplinesView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     @State private var query = ""
 
     private var items: [Discipline] {
-        if query.isEmpty { return store.disciplines }
-        return store.disciplines.filter { $0.title.localizedCaseInsensitiveContains(query) }
+        let active = store.activeDisciplines
+        if query.isEmpty { return active }
+        return active.filter { $0.title.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
@@ -290,7 +290,8 @@ struct DisciplinesView: View {
                         NavigationLink {
                             DisciplineDetailView(discipline: discipline)
                         } label: {
-                            DisciplineCard(discipline: discipline)
+                            DisciplineCard(discipline: discipline,
+                                           score: store.scores(disciplineId: discipline.id))
                         }
                         .buttonStyle(.plain)
                     }
@@ -304,6 +305,7 @@ struct DisciplinesView: View {
         .searchable(text: $query, prompt: "Поиск")
         .navigationTitle("Дисциплины")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await store.loadAllDisciplineDetails() }
     }
 
     private var emptyState: some View {
@@ -316,12 +318,13 @@ struct DisciplinesView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 }
 
 struct DisciplineCard: View {
     let discipline: Discipline
+    var score: AppStore.ScoreMetric? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -329,7 +332,7 @@ struct DisciplineCard: View {
                 .font(.body.weight(.medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 36, height: 36)
-                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                .lxpGlass(cornerRadius: 12)
             VStack(alignment: .leading, spacing: 4) {
                 Text(discipline.title)
                     .font(.body.weight(.semibold))
@@ -342,11 +345,19 @@ struct DisciplineCard: View {
                         if discipline.code != nil { Text("·").foregroundStyle(.tertiary) }
                         Text("\(discipline.totalHours) ч")
                     }
+                    if let s = score, s.maxScore > 0 {
+                        Text("·").foregroundStyle(.tertiary)
+                        Text("\(formatScore(s.earned)) / \(formatScore(s.maxScore)) б")
+                            .monospacedDigit()
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
+            if let g = score?.grade {
+                GradePill(grade: g)
+            }
             Image(systemName: "chevron.right")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.tertiary)
@@ -354,21 +365,53 @@ struct DisciplineCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
+    }
+
+    private func formatScore(_ v: Double) -> String {
+        if v.rounded() == v { return String(Int(v)) }
+        return String(format: "%.1f", v)
+    }
+}
+
+/// Бейдж 2-5 цветом по оценке: 5 — зелёный, 4 — синий, 3 — жёлтый, 2 — красный.
+struct GradePill: View {
+    let grade: Int
+
+    private var tint: Color {
+        switch grade {
+        case 5: return .green
+        case 4: return .blue
+        case 3: return .yellow
+        default: return .red
+        }
+    }
+
+    var body: some View {
+        Text("\(grade)")
+            .font(.subheadline.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(tint)
+            .frame(width: 30, height: 30)
+            .lxpGlassCircle(tint: tint.opacity(0.18))
     }
 }
 
 struct DisciplineDetailView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     let discipline: Discipline
 
     private var detail: DisciplineDetail? { store.disciplineDetails[discipline.id] }
     private var attendance: AppStore.AttendanceMetric { store.attendanceFor(disciplineTitle: discipline.title) }
+    private var score: AppStore.ScoreMetric? { store.scores(disciplineId: discipline.id) }
 
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
                 summary
+                if let s = score, s.assigned > 0 {
+                    scoreBreakdown(s)
+                }
                 topicsSection
             }
             .padding(.horizontal, 18)
@@ -388,13 +431,21 @@ struct DisciplineDetailView: View {
     private var summary: some View {
         GlassCard(padding: 20, corner: 26) {
             VStack(alignment: .leading, spacing: 12) {
-                Text(discipline.title)
-                    .font(.title3.weight(.semibold))
-                if let code = discipline.code, !code.isEmpty {
-                    Text(code)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .tracking(0.5)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(discipline.title)
+                            .font(.title3.weight(.semibold))
+                        if let code = discipline.code, !code.isEmpty {
+                            Text(code)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .tracking(0.5)
+                        }
+                    }
+                    Spacer()
+                    if let g = score?.grade {
+                        GradePill(grade: g)
+                    }
                 }
                 HStack(spacing: 20) {
                     metric(title: "Часы", value: "\(discipline.totalHours)")
@@ -411,6 +462,57 @@ struct DisciplineDetailView: View {
                 }
             }
         }
+    }
+
+    /// Карточка с баллами по дисциплине: `earned из assigned / maxScore` —
+    /// ровно то же, что показывает сайт ITHub.
+    private func scoreBreakdown(_ s: AppStore.ScoreMetric) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Баллы")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .tracking(0.5)
+                Spacer()
+                if let g = s.grade {
+                    Text("Оценка \(g)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(gradeColor(g))
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(formatScore(s.earned)) из \(formatScore(s.assigned))")
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                Text("/ \(formatScore(s.maxScore))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                Spacer()
+                Text("\(Int((s.rate * 100).rounded()))%")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            ProgressBar(rate: s.rate, color: s.grade.map(gradeColor) ?? .accentColor)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .lxpGlass(cornerRadius: 22)
+    }
+
+    private func gradeColor(_ g: Int) -> Color {
+        switch g {
+        case 5: return .green
+        case 4: return .blue
+        case 3: return .yellow
+        default: return .red
+        }
+    }
+
+    private func formatScore(_ v: Double) -> String {
+        if v.rounded() == v { return String(Int(v)) }
+        return String(format: "%.1f", v)
     }
 
     private func metric(title: String, value: String) -> some View {
@@ -443,7 +545,7 @@ struct DisciplineDetailView: View {
                         }
                     }
                 }
-                .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                .lxpGlass(cornerRadius: 22)
             }
         } else {
             HStack {
@@ -477,7 +579,7 @@ struct TopicRow: View {
                     if let s = topic.score, let m = topic.maxScore, m > 0 {
                         Text("·")
                             .foregroundStyle(.tertiary)
-                        Text("\(Int(s.rounded())) / \(Int(m.rounded()))")
+                        Text("\(Int(min(s, m).rounded())) / \(Int(m.rounded()))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
@@ -495,36 +597,47 @@ struct TopicRow: View {
     }
 }
 
-// MARK: - Diary
+// MARK: - Grades
 
+/// Журнал оценок: группы по дисциплинам, внутри список тем с уже выставленными
+/// баллами. Показываем сразу две метрики (текущая + полный потенциал) — чтобы
+/// было ясно, откуда берётся 4 в семестре, который только начался.
 struct DiaryView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
+    @State private var expanded: Set<String> = []
+    @State private var legendExpanded: Bool = false
 
-    private var entries: [DiaryEntry] { store.diary }
+    private struct Section: Identifiable {
+        let discipline: Discipline
+        let detail: DisciplineDetail
+        /// `nil`, если оценок ещё нет — карточка покажет «—» вместо процентов.
+        let score: AppStore.ScoreMetric?
+        var id: String { discipline.id }
+    }
+
+    private var sections: [Section] {
+        store.activeDisciplines.compactMap { d in
+            guard let detail = store.disciplineDetails[d.id] else { return nil }
+            return Section(
+                discipline: d,
+                detail: detail,
+                score: store.scores(disciplineId: d.id)
+            )
+        }
+    }
+
+    /// Первые N тем показываем сразу, остальные прячем под кнопку «Показать ещё».
+    private let collapsedLimit = 3
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                if entries.isEmpty {
+            VStack(spacing: 18) {
+                explainer
+                if sections.isEmpty {
                     emptyState
                 } else {
-                    ForEach(grouped, id: \.0) { (day, items) in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(headerTitle(for: day))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                                .tracking(0.5)
-                                .padding(.horizontal, 4)
-                            VStack(spacing: 0) {
-                                ForEach(Array(items.enumerated()), id: \.element.id) { index, entry in
-                                    diaryItem(entry)
-                                    if index < items.count - 1 {
-                                        Divider().padding(.leading, 56).opacity(0.4)
-                                    }
-                                }
-                            }
-                            .glassEffect(.regular, in: .rect(cornerRadius: 22))
-                        }
+                    ForEach(sections) { s in
+                        sectionCard(s)
                     }
                 }
             }
@@ -534,45 +647,235 @@ struct DiaryView: View {
         }
         .scrollContentBackground(.hidden)
         .background(.background)
-        .navigationTitle("Дневник")
+        .navigationTitle("Успеваемость")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await store.loadAllDisciplineDetails() }
     }
 
-    @ViewBuilder
-    private func diaryItem(_ entry: DiaryEntry) -> some View {
-        if let id = entry.topicId, !id.isEmpty {
-            NavigationLink {
-                TopicDetailView(topicId: id, fallbackTitle: entry.topic)
+    private var explainer: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { legendExpanded.toggle() }
             } label: {
-                DiaryRow(entry: entry, hasChevron: true)
+                HStack(spacing: 14) {
+                    Image(systemName: "info.circle")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Как считаются оценки")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(legendExpanded ? 180 : 0))
+                }
+                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-        } else {
-            DiaryRow(entry: entry, hasChevron: false)
+
+            if legendExpanded {
+                Divider().padding(.leading, 44).opacity(0.4)
+                gradeLegendRow(grade: 5, range: "≥ 90%")
+                Divider().padding(.leading, 44).opacity(0.4)
+                gradeLegendRow(grade: 4, range: "70–89%")
+                Divider().padding(.leading, 44).opacity(0.4)
+                gradeLegendRow(grade: 3, range: "50–69%")
+                Divider().padding(.leading, 44).opacity(0.4)
+                gradeLegendRow(grade: 2, range: "< 50%")
+                Divider().padding(.leading, 44).opacity(0.4)
+                Text("В строке баллов: набрано из выставленных, через слэш — полная шкала дисциплины (обычно 100). Процент и оценка считаются по выставленным.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .lxpGlass(cornerRadius: 22)
+    }
+
+    private func gradeLegendRow(grade: Int, range: String) -> some View {
+        HStack(spacing: 14) {
+            GradePill(grade: grade)
+                .frame(width: 28)
+            Text(range)
+                .font(.subheadline)
+                .monospacedDigit()
+            Spacer()
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+    }
+
+    /// Темы дисциплины, у которых уже есть оценка, дедупнутые по `topicId`.
+    /// Сервер часто шлёт одну и ту же тему через несколько learning paths —
+    /// без дедупа в журнале они задваивались.
+    private func gradedTopics(for detail: DisciplineDetail) -> [Topic] {
+        var byId: [String: Topic] = [:]
+        for t in detail.topics {
+            let isGraded = (t.score ?? 0) > 0 || t.status == .passed || t.status == .failed
+            guard isGraded else { continue }
+            if let ex = byId[t.id] {
+                if (t.score ?? 0) > (ex.score ?? 0) { byId[t.id] = t }
+            } else {
+                byId[t.id] = t
+            }
+        }
+        return Array(byId.values).sorted {
+            $0.number.compare($1.number, options: .numeric) == .orderedAscending
         }
     }
 
-    private var grouped: [(Date, [DiaryEntry])] {
-        let cal = Calendar.current
-        let dict = Dictionary(grouping: entries) { cal.startOfDay(for: $0.date) }
-        return dict.sorted { $0.key > $1.key }
+    @ViewBuilder
+    private func sectionCard(_ s: Section) -> some View {
+        let graded = gradedTopics(for: s.detail)
+        let isExpanded = expanded.contains(s.id)
+        let visible = isExpanded ? graded : Array(graded.prefix(collapsedLimit))
+        let hidden = max(0, graded.count - visible.count)
+
+        VStack(alignment: .leading, spacing: 10) {
+            // Заголовок дисциплины с метриками — кликабельный, ведёт на экран дисциплины.
+            NavigationLink {
+                DisciplineDetailView(discipline: s.discipline)
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(s.discipline.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(2)
+                            if let code = s.discipline.code, !code.isEmpty {
+                                Text(code)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        Spacer()
+                        if let g = s.score?.grade {
+                            GradePill(grade: g)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    if let score = s.score, score.assigned > 0 {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(formatScore(score.earned)) из \(formatScore(score.assigned))")
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                            Text("/ \(formatScore(score.maxScore))")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            Spacer()
+                            Text("\(Int((score.rate * 100).rounded()))%")
+                                .font(.subheadline.weight(.semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        ProgressBar(rate: score.rate, color: gradeColor(for: score.grade))
+                    } else {
+                        HStack(spacing: 6) {
+                            Image(systemName: "hourglass")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            Text("Баллов пока нет")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let score = s.score, score.maxScore > 0 {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text("максимум \(formatScore(score.maxScore))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Список оценённых тем.
+            VStack(spacing: 0) {
+                if graded.isEmpty {
+                    Text("Пока нет выставленных оценок")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, topic in
+                        NavigationLink {
+                            TopicDetailView(topicId: topic.id, fallbackTitle: topic.title)
+                        } label: {
+                            GradeRow(topic: topic)
+                        }
+                        .buttonStyle(.plain)
+                        if index < visible.count - 1 {
+                            Divider().padding(.leading, 16).opacity(0.4)
+                        }
+                    }
+                    if graded.count > collapsedLimit {
+                        Divider().padding(.leading, 16).opacity(0.4)
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                if isExpanded { expanded.remove(s.id) }
+                                else { expanded.insert(s.id) }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(isExpanded ? "Свернуть" : "Показать ещё \(hidden)")
+                                    .font(.caption.weight(.semibold))
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2.weight(.semibold))
+                            }
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity)
+        .lxpGlass(cornerRadius: 22)
     }
 
-    private func headerTitle(for date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ru_RU")
-        f.dateFormat = "d MMMM, EEEE"
-        return f.string(from: date).capitalized
+    private func gradeColor(for grade: Int?) -> Color {
+        switch grade {
+        case 5: return .green
+        case 4: return .blue
+        case 3: return .yellow
+        case 2: return .red
+        default: return .secondary
+        }
+    }
+
+    private func formatScore(_ v: Double) -> String {
+        if v.rounded() == v { return String(Int(v)) }
+        return String(format: "%.1f", v)
     }
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "book.closed")
+            Image(systemName: "graduationcap")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("Пока ничего нет")
+            Text("Оценок пока нет")
                 .font(.subheadline.weight(.semibold))
-            Text("Здесь появятся пары с известным посещением")
+            Text("Здесь появятся темы с выставленными баллами")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -580,51 +883,56 @@ struct DiaryView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
         .padding(.horizontal, 16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 }
 
-struct DiaryRow: View {
-    let entry: DiaryEntry
-    var hasChevron: Bool = false
+struct GradeRow: View {
+    let topic: Topic
 
     var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: entry.attendance.symbol)
-                .font(.body.weight(.medium))
-                .foregroundStyle(entry.attendance.tint)
-                .frame(width: 32, height: 32)
-                .glassEffect(.regular, in: .circle)
+        HStack(spacing: 12) {
+            Image(systemName: topic.isCheckpoint ? "flag.fill" : "circle.fill")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(topic.status.tint)
+                .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.discipline)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(entry.topic)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(topic.title)
+                    .font(.subheadline)
                     .lineLimit(2)
+                Text(topic.status.label)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(topic.status.tint)
+                    .tracking(0.4)
             }
             Spacer()
-            Text(entry.date, format: .dateTime.hour().minute())
+            if let s = topic.score, let m = topic.maxScore, m > 0 {
+                // Сырой score из API может превышать maxScore — обрезаем,
+                // как это делает сайт ITHub.
+                Text("\(formatScore(min(s, m))) / \(formatScore(m))")
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+            }
+            Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .monospacedDigit()
-            if hasChevron {
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .padding(.horizontal, 16)
         .contentShape(Rectangle())
+    }
+
+    private func formatScore(_ v: Double) -> String {
+        if v.rounded() == v { return String(Int(v)) }
+        return String(format: "%.1f", v)
     }
 }
 
 // MARK: - Attendance overview
 
 struct AttendanceOverviewView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     @State private var range: Range = .week
     @State private var legendExpanded: Bool = false
 
@@ -634,12 +942,23 @@ struct AttendanceOverviewView: View {
         var id: String { rawValue }
     }
 
+    /// Календарный интервал: текущая неделя (пн → сейчас) или текущий месяц (1-е → сейчас).
+    /// До первой пары недели/месяца окно может быть пустым — это нормально.
     private var rangeInterval: ClosedRange<Date> {
-        let cal = Calendar.current
-        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date()))!
-        let days = range == .week ? 6 : 29
-        let start = cal.date(byAdding: .day, value: -days, to: cal.startOfDay(for: Date()))!
-        return start...endOfToday
+        let now = Date()
+        switch range {
+        case .week:
+            var cal = Calendar(identifier: .gregorian)
+            cal.firstWeekday = 2 // Monday
+            let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+            let start = cal.date(from: comps)!
+            return start...now
+        case .month:
+            let cal = Calendar.current
+            let comps = cal.dateComponents([.year, .month], from: now)
+            let start = cal.date(from: comps)!
+            return start...now
+        }
     }
 
     private var metric: AppStore.AttendanceMetric {
@@ -647,7 +966,7 @@ struct AttendanceOverviewView: View {
     }
 
     private var disciplineRows: [(Discipline, AppStore.AttendanceMetric)] {
-        store.disciplines
+        store.activeDisciplines
             .map { ($0, store.attendanceFor(disciplineTitle: $0.title, in: rangeInterval)) }
             .filter { $0.1.totalHours > 0 }
             .sorted { $0.1.rate < $1.1.rate }
@@ -677,7 +996,7 @@ struct AttendanceOverviewView: View {
         HStack(spacing: 8) {
             ForEach(Range.allCases) { r in
                 FilterPill(title: r.rawValue, isSelected: range == r) {
-                    withAnimation(.snappy) { range = r }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { range = r }
                 }
             }
             Spacer()
@@ -729,7 +1048,7 @@ struct AttendanceOverviewView: View {
     private var legend: some View {
         VStack(spacing: 0) {
             Button {
-                withAnimation(.snappy) { legendExpanded.toggle() }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { legendExpanded.toggle() }
             } label: {
                 HStack(spacing: 14) {
                     Image(systemName: "info.circle")
@@ -761,7 +1080,7 @@ struct AttendanceOverviewView: View {
                 legendRow(.noMark)
             }
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 
     private func legendRow(_ s: AttendanceStatus) -> some View {
@@ -797,13 +1116,18 @@ struct AttendanceOverviewView: View {
                 SectionHeader(title: "По дисциплинам")
                 VStack(spacing: 0) {
                     ForEach(Array(disciplineRows.enumerated()), id: \.offset) { index, pair in
-                        DisciplineAttendanceRow(discipline: pair.0, metric: pair.1)
+                        NavigationLink {
+                            DisciplineDetailView(discipline: pair.0)
+                        } label: {
+                            DisciplineAttendanceRow(discipline: pair.0, metric: pair.1)
+                        }
+                        .buttonStyle(.plain)
                         if index < disciplineRows.count - 1 {
                             Divider().padding(.leading, 16).opacity(0.4)
                         }
                     }
                 }
-                .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                .lxpGlass(cornerRadius: 22)
             }
         }
     }
@@ -823,6 +1147,9 @@ struct DisciplineAttendanceRow: View {
                 Text("\(Int((metric.rate * 100).rounded()))%")
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
             AttendanceBar(rate: metric.rate)
             Text(detailLine)
@@ -830,6 +1157,7 @@ struct DisciplineAttendanceRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(16)
+        .contentShape(Rectangle())
     }
 
     private var detailLine: String {
@@ -847,7 +1175,7 @@ struct DisciplineAttendanceRow: View {
 // MARK: - Profile
 
 struct ProfileView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     private var p: Profile { store.profile }
 
     var body: some View {
@@ -875,7 +1203,7 @@ struct ProfileView: View {
                                       subtitle: "\(p.groupMates.count + 1) человек",
                                       symbol: "person.3")
                             .padding(16)
-                            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                            .lxpGlass(cornerRadius: 22)
                     }
                     .buttonStyle(.plain)
                 }
@@ -891,10 +1219,10 @@ struct ProfileView: View {
 
     private var avatar: some View {
         VStack(spacing: 12) {
-            Text(initials)
-                .font(.system(size: 36, weight: .semibold, design: .rounded))
-                .frame(width: 96, height: 96)
-                .glassEffect(.regular, in: .circle)
+            AvatarView(avatarPath: p.avatar,
+                       initials: initials,
+                       size: 96,
+                       fontSize: 36)
             Text("\(p.lastName) \(p.firstName) \(p.middleName)")
                 .font(.title3.weight(.semibold))
                 .multilineTextAlignment(.center)
@@ -931,7 +1259,7 @@ struct ProfileView: View {
                     }
                 }
             }
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .lxpGlass(cornerRadius: 22)
         }
     }
 }
@@ -951,10 +1279,10 @@ struct GroupListView: View {
                 } else {
                     ForEach(mates) { mate in
                         HStack(spacing: 14) {
-                            Text(mate.initials)
-                                .font(.caption.weight(.semibold))
-                                .frame(width: 36, height: 36)
-                                .glassEffect(.regular, in: .circle)
+                            AvatarView(avatarPath: mate.avatar,
+                                       initials: mate.initials,
+                                       size: 36,
+                                       fontSize: 13)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(mate.fullName).font(.subheadline)
                                 if let email = mate.email, !email.isEmpty {
@@ -968,7 +1296,7 @@ struct GroupListView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                        .lxpGlass(cornerRadius: 18)
                     }
                 }
             }
@@ -985,19 +1313,15 @@ struct GroupListView: View {
 // MARK: - Settings
 
 struct SettingsView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
-    @State private var theme = "Системная"
-    @State private var locale = "Русский"
-    @State private var notifications = true
+    @AppStorage("appearance") private var appearance: AppearanceMode = .system
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    settingRow("Цветовая тема", value: theme)
-                    settingRow("Локализация", value: locale)
-                    settingToggle("Уведомления", isOn: $notifications)
+                    appearancePicker
 
                     Button(role: .destructive) {
                         store.signOut()
@@ -1011,7 +1335,7 @@ struct SettingsView: View {
                         .frame(maxWidth: .infinity)
                         .padding(16)
                     }
-                    .glassEffect(.regular.tint(.red.opacity(0.2)), in: .rect(cornerRadius: 18))
+                    .lxpGlass(cornerRadius: 18, tint: .red.opacity(0.2))
                     .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 18)
@@ -1030,25 +1354,75 @@ struct SettingsView: View {
         }
     }
 
-    private func settingRow(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title).font(.subheadline)
-            Spacer()
-            Text(value).font(.subheadline).foregroundStyle(.secondary)
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.tertiary)
+    private var appearancePicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Цветовая тема")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .tracking(0.5)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+            HStack(spacing: 8) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            appearance = mode
+                        }
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: mode.symbol)
+                                .font(.title3)
+                            Text(mode.title)
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(appearance == mode ? .primary : .secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .lxpGlass(cornerRadius: 14,
+                                  tint: appearance == mode ? .accentColor.opacity(0.18) : nil)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
         }
-        .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .lxpGlass(cornerRadius: 18)
+    }
+}
+
+/// Цветовая тема приложения. Сохраняется через `@AppStorage`, применяется к
+/// `WindowGroup` через `.preferredColorScheme` в `NewLXPApp`.
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "Система"
+        case .light: return "Светлая"
+        case .dark: return "Тёмная"
+        }
     }
 
-    private func settingToggle(_ title: String, isOn: Binding<Bool>) -> some View {
-        Toggle(isOn: isOn) {
-            Text(title).font(.subheadline)
+    var symbol: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
         }
-        .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 }
 
@@ -1091,7 +1465,7 @@ struct AboutView: View {
             Image(systemName: "graduationcap.fill")
                 .font(.system(size: 36, weight: .semibold))
                 .frame(width: 88, height: 88)
-                .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                .lxpGlass(cornerRadius: 22)
             Text("LXP IThub").font(.title3.weight(.semibold))
             Text("Версия \(marketingVersion) (build \(buildNumber))")
                 .font(.footnote)
@@ -1112,7 +1486,7 @@ struct AboutView: View {
             link(title: "Исходники на GitHub", symbol: "chevron.left.forwardslash.chevron.right",
                  url: URL(string: "https://github.com/keetsta/NewLXP")!)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 
     private func link(title: String, symbol: String, url: URL) -> some View {
@@ -1197,7 +1571,7 @@ struct DigestSections: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .lxpGlass(cornerRadius: 22)
         } else {
             VStack(spacing: 0) {
                 ForEach(Array(digest.events.enumerated()), id: \.element.id) { index, event in
@@ -1207,7 +1581,7 @@ struct DigestSections: View {
                     }
                 }
             }
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .lxpGlass(cornerRadius: 22)
         }
     }
 

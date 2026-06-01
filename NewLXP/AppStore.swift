@@ -1,44 +1,68 @@
 import Foundation
 import SwiftUI
+import Combine
 
-@Observable
 @MainActor
-final class AppStore {
+final class AppStore: ObservableObject {
     static let shared = AppStore()
 
     // Auth
-    var isAuthenticated: Bool = TokenStore.accessToken?.isEmpty == false
-    var authError: String?
-    var isAuthLoading: Bool = false
+    @Published var isAuthenticated: Bool = TokenStore.accessToken?.isEmpty == false
+    @Published var authError: String?
+    @Published var isAuthLoading: Bool = false
 
     // Profile
-    var profile: Profile = MockData.profile
+    @Published var profile: Profile = MockData.profile
 
     // Schedule
-    var lessonsByDay: [Date: [Lesson]] = [:]
-    var loadedRanges: [DateInterval] = []
-    var isScheduleLoading: Bool = false
+    @Published var lessonsByDay: [Date: [Lesson]] = [:]
+    @Published var loadedRanges: [DateInterval] = []
+    @Published var isScheduleLoading: Bool = false
 
     // Disciplines
-    var disciplines: [Discipline] = MockData.disciplines
-    var disciplineDetails: [String: DisciplineDetail] = [:]
-    var topicDetails: [String: TopicDetail] = [:]
+    @Published var disciplines: [Discipline] = MockData.disciplines
+    @Published var disciplineDetails: [String: DisciplineDetail] = [:]
+    @Published var topicDetails: [String: TopicDetail] = [:]
 
     // Assignments
-    var assignments: [Assignment] = MockData.assignments
+    @Published var assignments: [Assignment] = MockData.assignments
 
     // Last load error to surface in UI / debug
-    var lastError: String?
+    @Published var lastError: String?
 
     var assignmentsCount: Int { assignments.count }
-    var disciplinesCount: Int { disciplines.count }
+    var disciplinesCount: Int { activeDisciplines.count }
 
     var fullName: String {
         [profile.lastName, profile.firstName, profile.middleName]
             .filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    private init() {}
+    private init() {
+        hydrateFromCache()
+    }
+
+    private func hydrateFromCache() {
+        if let p = DiskCache.load(.profile, as: Profile.self) { self.profile = p }
+        if let d = DiskCache.load(.disciplines, as: [Discipline].self) { self.disciplines = d }
+        if let a = DiskCache.load(.assignments, as: [Assignment].self) { self.assignments = a }
+        if let l = DiskCache.load(.lessonsByDay, as: [Date: [Lesson]].self) { self.lessonsByDay = l }
+        if let r = DiskCache.load(.loadedRanges, as: [DateInterval].self) { self.loadedRanges = r }
+        if let dd = DiskCache.load(.disciplineDetails, as: [String: DisciplineDetail].self) {
+            // Миграция: старый кэш не содержит scoreForAnsweredTasks. Если ни у
+            // одной детали этих полей нет (все нули), кэш считается устаревшим
+            // и сбрасывается — он молча перекачается с сервера в loadAllDisciplineDetails.
+            let hasScores = dd.values.contains { $0.maxScoreForAnsweredTasks > 0 }
+            if hasScores {
+                self.disciplineDetails = dd
+            } else {
+                DiskCache.save(.disciplineDetails, [String: DisciplineDetail]())
+            }
+        }
+        if let td = DiskCache.load(.topicDetails, as: [String: TopicDetail].self) {
+            self.topicDetails = td
+        }
+    }
 
     // MARK: - Lessons
 
@@ -74,19 +98,6 @@ final class AppStore {
             .sorted { $0.start > $1.start }
     }
 
-    /// Diary derived from real lessons (most recent first).
-    var diary: [DiaryEntry] {
-        pastLessons.map {
-            DiaryEntry(
-                discipline: $0.discipline,
-                topic: $0.topic.isEmpty ? "—" : $0.topic,
-                topicId: $0.topicId,
-                date: $0.start,
-                attendance: $0.attendance
-            )
-        }
-    }
-
     // MARK: - Attendance metrics
 
     struct AttendanceMetric {
@@ -94,6 +105,51 @@ final class AppStore {
         let missedHours: Double
         var attendedHours: Double { max(0, totalHours - missedHours) }
         var rate: Double { totalHours > 0 ? attendedHours / totalHours : 0 }
+    }
+
+    // MARK: - Score metrics
+
+    /// Баллы по дисциплине, как считает ITHub. На сайте показывается «X из Y / Z»:
+    /// - `earned` — заработано (X)
+    /// - `assigned` — сумма maxScore тем с уже выставленными баллами (Y)
+    /// - `maxScore` — нормировка дисциплины (Z), обычно 100
+    /// Оценка 2-5 идёт по `earned/assigned`, а не по `earned/maxScore` —
+    /// это ключевой момент.
+    struct ScoreMetric {
+        let earned: Double
+        let assigned: Double
+        let maxScore: Double
+
+        /// Доля «оцененного» — основа для оценки 2-5.
+        var rate: Double { assigned > 0 ? earned / assigned : 0 }
+        /// Доля от полной нормировки — сколько уже набрано «из 100».
+        var fullRate: Double { maxScore > 0 ? earned / maxScore : 0 }
+
+        /// Шкала ITHub: <50% → 2, <70% → 3, <90% → 4, ≥90% → 5.
+        var grade: Int? {
+            guard assigned > 0 else { return nil }
+            let r = rate
+            if r >= 0.90 { return 5 }
+            if r >= 0.70 { return 4 }
+            if r >= 0.50 { return 3 }
+            return 2
+        }
+    }
+
+    func scores(disciplineId: String) -> ScoreMetric? {
+        guard let detail = disciplineDetails[disciplineId] else { return nil }
+        // На сайте ITHub числитель и знаменатель оценки приходят отдельными
+        // полями `scoreForAnsweredTasks` / `maxScoreForAnsweredTasks` —
+        // сервер сам решает, что считать «выставленным», и считает корректно
+        // во всех краевых случаях (бонусные баллы, дубли тем через learning
+        // paths, разные способы оценивания). Доверяем серверу, не пересчитываем
+        // вручную из topics.
+        let earned = detail.scoreForAnsweredTasks
+        let assigned = detail.maxScoreForAnsweredTasks
+        let normalized = detail.discipline.maxScore
+        let maxScore = normalized > 0 ? normalized : assigned
+        if assigned == 0 && maxScore == 0 { return nil }
+        return ScoreMetric(earned: earned, assigned: assigned, maxScore: maxScore)
     }
 
     /// Aggregate attendance over a date interval. Only `.absent` counts as missed.
@@ -112,18 +168,41 @@ final class AppStore {
         return AttendanceMetric(totalHours: total, missedHours: missed)
     }
 
+    /// Текущая календарная неделя: с понедельника по сегодня включительно.
+    /// На утро понедельника, до первой пары, метрика будет пустой — это ожидаемо.
     func weekAttendance(reference: Date = Date()) -> AttendanceMetric {
-        let cal = Calendar.current
-        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: reference))!
-        let weekAgo = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: reference))!
-        return attendance(in: weekAgo...endOfToday)
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Monday
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: reference)
+        let weekStart = cal.date(from: comps)!
+        let now = reference
+        // Окно: [пн 00:00 ... сейчас]. Берём именно сейчас, чтобы не считать
+        // ещё не прошедшие пары.
+        return attendance(in: weekStart...now)
     }
 
+    /// Посещаемость для произвольной недели: пн → вс относительно `anchor`.
+    /// Для прошлых недель окно полное, для текущей — обрезается «до сейчас»,
+    /// чтобы не считать ещё не прошедшие пары.
+    func weekAttendance(forAnchor anchor: Date) -> AttendanceMetric {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Monday
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: anchor)
+        let weekStart = cal.date(from: comps)!
+        let weekEnd = cal.date(byAdding: .day, value: 7, to: weekStart)!
+        let upper = min(weekEnd, Date())
+        guard upper >= weekStart else {
+            return AttendanceMetric(totalHours: 0, missedHours: 0)
+        }
+        return attendance(in: weekStart...upper)
+    }
+
+    /// Текущий календарный месяц: с 1-го числа по сегодня включительно.
     func monthAttendance(reference: Date = Date()) -> AttendanceMetric {
         let cal = Calendar.current
-        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: reference))!
-        let monthAgo = cal.date(byAdding: .day, value: -29, to: cal.startOfDay(for: reference))!
-        return attendance(in: monthAgo...endOfToday)
+        let comps = cal.dateComponents([.year, .month], from: reference)
+        let monthStart = cal.date(from: comps)!
+        return attendance(in: monthStart...reference)
     }
 
     /// Attendance for one discipline within a date interval (past lessons only).
@@ -304,6 +383,7 @@ final class AppStore {
             self.profile = me.profile
             TokenStore.userId = me.userId
             TokenStore.studentId = me.studentId
+            DiskCache.save(.profile, me.profile)
             print("[LXP] loadProfile OK studentId=\(me.studentId ?? "nil") mates=\(me.profile.groupMates.count)")
         } catch {
             self.lastError = "profile: \(error.localizedDescription)"
@@ -334,6 +414,8 @@ final class AppStore {
             }
             self.lessonsByDay = bucket
             self.loadedRanges.append(interval)
+            DiskCache.save(.lessonsByDay, self.lessonsByDay)
+            DiskCache.save(.loadedRanges, self.loadedRanges)
             print("[LXP] loadSchedule OK \(lessons.count) lessons in \(from)..\(to)")
         } catch {
             self.lastError = "schedule: \(error.localizedDescription)"
@@ -358,11 +440,32 @@ final class AppStore {
         await loadSchedule(studentId: studentId, from: from, to: to)
     }
 
+    /// Активные дисциплины — те, у которых в загруженном расписании есть
+    /// **3 и более пар**. Сервер `studentDisciplinesThroughClassesWithPagination`
+    /// возвращает все записи, к которым студент когда-либо был привязан, в т.ч.
+    /// артефакты вроде разовой замены (например, «Английский A2», у которого
+    /// в окне всего 1 пара 26 мая — реальный курс это «Английский B1» с 30
+    /// парами). Порог 3 надёжно отсекает такие single-shot записи, не задевая
+    /// курсы текущего семестра, у которых пары уже закончились (минимум 5-8 пар).
+    /// Фолбэк на полный список — если расписание ещё не подгрузилось.
+    var activeDisciplines: [Discipline] {
+        var counts: [String: Int] = [:]
+        for (_, lessons) in lessonsByDay {
+            for l in lessons {
+                counts[l.discipline, default: 0] += 1
+            }
+        }
+        guard !counts.isEmpty else { return disciplines }
+        return disciplines.filter { (counts[$0.title] ?? 0) >= 3 }
+    }
+
     func loadDisciplines(studentId: String) async {
         do {
             let list = try await DisciplinesRepository.list(studentId: studentId)
             // Сервер возвращает разные «инстансы» одной дисциплины (разные семестры/группы)
             // как отдельные записи с одинаковым name. Склеиваем их, суммируя часы.
+            // `maxScore` берём максимальный среди инстансов — это нормировка дисциплины
+            // (обычно 100, иногда 80/70). Суммировать его нельзя.
             var byTitle: [String: Discipline] = [:]
             var order: [String] = []
             for d in list {
@@ -371,7 +474,8 @@ final class AppStore {
                         id: existing.id,
                         title: existing.title,
                         code: existing.code ?? d.code,
-                        totalHours: existing.totalHours + d.totalHours
+                        totalHours: existing.totalHours + d.totalHours,
+                        maxScore: max(existing.maxScore, d.maxScore)
                     )
                 } else {
                     byTitle[d.title] = d
@@ -379,6 +483,7 @@ final class AppStore {
                 }
             }
             self.disciplines = order.compactMap { byTitle[$0] }
+            DiskCache.save(.disciplines, self.disciplines)
             print("[LXP] loadDisciplines OK \(list.count) raw → \(self.disciplines.count) unique")
         } catch {
             self.lastError = "disciplines: \(error.localizedDescription)"
@@ -391,10 +496,26 @@ final class AppStore {
         do {
             let d = try await DisciplinesRepository.detail(studentId: studentId, disciplineId: disciplineId)
             self.disciplineDetails[disciplineId] = d
+            DiskCache.save(.disciplineDetails, self.disciplineDetails)
             print("[LXP] loadDisciplineDetail OK \(disciplineId) topics=\(d.topics.count)")
         } catch {
             self.lastError = "disciplineDetail: \(error.localizedDescription)"
             print("[LXP] loadDisciplineDetail FAIL \(error)")
+        }
+    }
+
+    /// Параллельно подгружает детали для всех известных дисциплин, чтобы корректно
+    /// посчитать сводные баллы. Уже закэшированные пропускаем. Архивные/неактивные
+    /// (нет пар в окне) тоже пропускаем — они не нужны для оценок этого семестра.
+    func loadAllDisciplineDetails() async {
+        guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return }
+        let toLoad = activeDisciplines.filter { disciplineDetails[$0.id] == nil }
+        guard !toLoad.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for d in toLoad {
+                group.addTask { await self.loadDisciplineDetail(disciplineId: d.id) }
+            }
+            await group.waitForAll()
         }
     }
 
@@ -403,6 +524,7 @@ final class AppStore {
         do {
             let t = try await TopicRepository.detail(studentId: studentId, topicId: topicId)
             self.topicDetails[topicId] = t
+            DiskCache.save(.topicDetails, self.topicDetails)
             print("[LXP] loadTopicDetail OK \(topicId) blocks=\(t.blocks.count)")
         } catch {
             self.lastError = "topic: \(error.localizedDescription)"
@@ -414,6 +536,7 @@ final class AppStore {
         do {
             let list = try await TasksRepository.availableTasks(studentId: studentId)
             self.assignments = list
+            DiskCache.save(.assignments, list)
             print("[LXP] loadAssignments OK \(list.count)")
         } catch {
             self.lastError = "assignments: \(error.localizedDescription)"
@@ -443,6 +566,7 @@ final class AppStore {
 
     func signOut() {
         TokenStore.clear()
+        DiskCache.clearAll()
         isAuthenticated = false
         profile = MockData.profile
         lessonsByDay = [:]

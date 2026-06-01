@@ -105,6 +105,15 @@ enum LXPError: LocalizedError {
 extension ApolloClient {
     func fetchData<Q: GraphQLQuery>(_ query: Q) async throws -> Q.Data
     where Q.ResponseFormat == SingleResponseFormat {
+        try await fetchData(query, allowRefresh: true)
+    }
+
+    /// Внутренний фетч с поддержкой автообновления токена. При ответе сервера
+    /// «Сессия истекла» один раз пробуем `refreshToken`, обновляем
+    /// `TokenStore.accessToken` и повторяем запрос. Бесконечной рекурсии нет —
+    /// `allowRefresh = false` на повторном вызове.
+    private func fetchData<Q: GraphQLQuery>(_ query: Q, allowRefresh: Bool) async throws -> Q.Data
+    where Q.ResponseFormat == SingleResponseFormat {
         do {
             let response: GraphQLResponse<Q> = try await self.fetch(
                 query: query,
@@ -112,6 +121,11 @@ extension ApolloClient {
             )
             if let errors = response.errors, !errors.isEmpty {
                 let msg = errors.compactMap { $0.message }.joined(separator: "; ")
+                if allowRefresh, isExpiredSessionMessage(msg) {
+                    if try await refreshAccessToken() {
+                        return try await fetchData(query, allowRefresh: false)
+                    }
+                }
                 throw LXPError.server(msg.isEmpty ? "GraphQL error" : msg)
             }
             guard let data = response.data else { throw LXPError.decoding }
@@ -126,5 +140,55 @@ extension ApolloClient {
             print("[LXP] Other error: \(error)")
             throw error
         }
+    }
+
+    private func isExpiredSessionMessage(_ msg: String) -> Bool {
+        let lower = msg.lowercased()
+        return lower.contains("сессия истекла")
+            || lower.contains("session expired")
+            || lower.contains("unauthorized")
+            || lower.contains("token expired")
+            || lower.contains("jwt expired")
+    }
+}
+
+/// Состояние автообновления — чтобы при параллельных запросах рефреш дёргался один раз.
+private actor TokenRefreshCoordinator {
+    static let shared = TokenRefreshCoordinator()
+    private var inflight: Task<Bool, Error>?
+
+    func refresh() async throws -> Bool {
+        if let t = inflight { return try await t.value }
+        let task = Task<Bool, Error> {
+            defer { Task { await self.clear() } }
+            return try await AuthRepository.refresh()
+        }
+        inflight = task
+        return try await task.value
+    }
+
+    private func clear() { inflight = nil }
+}
+
+private func refreshAccessToken() async throws -> Bool {
+    do {
+        let ok = try await TokenRefreshCoordinator.shared.refresh()
+        print("[LXP] token refresh \(ok ? "OK" : "skipped")")
+        if !ok {
+            // refreshToken отсутствует или пуст — токены протухли окончательно.
+            await MainActor.run {
+                TokenStore.clear()
+                AppStore.shared.isAuthenticated = false
+            }
+        }
+        return ok
+    } catch {
+        print("[LXP] token refresh FAIL: \(error.localizedDescription)")
+        // refreshToken тоже отвергнут сервером — выкидываем юзера на логин.
+        await MainActor.run {
+            TokenStore.clear()
+            AppStore.shared.isAuthenticated = false
+        }
+        return false
     }
 }

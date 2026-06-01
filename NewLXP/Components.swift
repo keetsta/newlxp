@@ -16,18 +16,22 @@ enum RussianPlural {
     static func pairs(_ n: Int) -> String { form(n, one: "пара", few: "пары", many: "пар") }
     static func minutes(_ n: Int) -> String { form(n, one: "минута", few: "минуты", many: "минут") }
     static func hours(_ n: Int) -> String { form(n, one: "час", few: "часа", many: "часов") }
+
+    /// Винительный падеж для фраз вида «через N минут(у/ы)».
+    /// Для часов винительный совпадает с именительным, отдельная функция не нужна.
+    static func minutesAccusative(_ n: Int) -> String { form(n, one: "минуту", few: "минуты", many: "минут") }
 }
 
 /// Formats a positive minute count as a short countdown:
 /// 25 → "25 мин", 60 → "1 ч", 90 → "1 ч 30 мин", 120 → "2 ч".
 func formatMinutesAsCountdown(_ totalMinutes: Int) -> String {
     let m = max(0, totalMinutes)
-    if m < 60 { return "\(m) \(RussianPlural.minutes(m))" }
+    if m < 60 { return "\(m) \(RussianPlural.minutesAccusative(m))" }
     let hours = m / 60
     let mins = m % 60
     let h = "\(hours) \(RussianPlural.hours(hours))"
     if mins == 0 { return h }
-    return "\(h) \(mins) \(RussianPlural.minutes(mins))"
+    return "\(h) \(mins) \(RussianPlural.minutesAccusative(mins))"
 }
 
 struct GlassCard<Content: View>: View {
@@ -39,7 +43,7 @@ struct GlassCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassEffect(.regular, in: .rect(cornerRadius: corner))
+            .lxpGlass(cornerRadius: corner)
     }
 }
 
@@ -109,7 +113,7 @@ struct AttendanceBadge: View {
         }
         .padding(.horizontal, compact ? 8 : 10)
         .padding(.vertical, compact ? 4 : 6)
-        .glassEffect(.regular, in: .capsule)
+        .lxpGlassCapsule()
     }
 }
 
@@ -129,6 +133,26 @@ struct AttendanceBar: View {
                 Capsule()
                     .fill(color)
                     .frame(width: geo.size.width * rate)
+            }
+        }
+        .frame(height: 4)
+    }
+}
+
+/// Универсальный прогресс-бар с заданным цветом. В отличие от `AttendanceBar`
+/// не выбирает цвет автоматически — нужен там, где цвет диктуется внешней
+/// логикой (например, оценка 2-5).
+struct ProgressBar: View {
+    let rate: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.quaternary)
+                Capsule()
+                    .fill(color)
+                    .frame(width: geo.size.width * max(0, min(1, rate)))
             }
         }
         .frame(height: 4)
@@ -181,7 +205,7 @@ struct LateBanner: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.orange)
                 .frame(width: 40, height: 40)
-                .glassEffect(.regular, in: .circle)
+                .lxpGlassCircle()
             VStack(alignment: .leading, spacing: 2) {
                 Text("Опоздание")
                     .font(.caption.weight(.semibold))
@@ -199,7 +223,7 @@ struct LateBanner: View {
             Spacer()
         }
         .padding(14)
-        .glassEffect(.regular.tint(.orange.opacity(0.18)), in: .rect(cornerRadius: 20))
+        .lxpGlass(cornerRadius: 20, tint: .orange.opacity(0.18))
     }
 }
 
@@ -249,7 +273,7 @@ struct LessonRow: View {
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .glassEffect(.regular.tint(.orange.opacity(0.15)), in: .capsule)
+                        .lxpGlassCapsule(tint: .orange.opacity(0.15))
                     }
                 }
             }
@@ -288,6 +312,6 @@ struct CountTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
         .contentShape(Rectangle())
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 }

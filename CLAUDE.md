@@ -1,14 +1,25 @@
 # NewLXP — ITHub LXP iOS Client
 
-iOS-приложение — клиент образовательной платформы LXP колледжа ITHub. Минималистичный дизайн под iOS 26 с использованием `.glassEffect`. Привязано к боевому API `https://api.newlxp.ru/graphql`.
+iOS-приложение — клиент образовательной платформы LXP колледжа ITHub. Минималистичный дизайн со «стеклянными» поверхностями. Привязано к боевому API `https://api.newlxp.ru/graphql`.
 
 ## Стек
 
-- **Swift / SwiftUI** — только SwiftUI, минимально UIKit (только `UIDevice` для версии ОС)
-- **iOS 26+** — используется `.glassEffect`, `.tabBarMinimizeBehavior`, нативный `Tab` API, `@Observable`
+- **Swift / SwiftUI** — только SwiftUI, минимально UIKit (только `UIDevice` для версии ОС, `UIImage` в `RemoteImageLoader`)
+- **iOS 16.0+** (deployment target). UI работает на iOS 16-25, на iOS 26+ автоматически включается нативный `.glassEffect`. См. раздел «Совместимость».
 - **Xcode** — проект в `NewLXP.xcodeproj`, открывать Xcode 26.4+
 - **Apollo iOS 2.0.3** — GraphQL клиент, подключён через SPM
 - **apollo-ios-cli 2.0.3** — лежит в корне проекта, кодген запускается командой `./apollo-ios-cli generate --ignore-version-mismatch`
+
+## Совместимость и iOS-API
+
+Минималка — **iOS 16**. Всё, что появилось позже, обёрнуто в `#available` или заменено на старый API:
+
+- **Стеклянный эффект** — только через хелперы `lxpGlass(cornerRadius:tint:)`, `lxpGlassCapsule(tint:)`, `lxpGlassCircle(tint:)` из `GlassEffect.swift`. Внутри: `if #available(iOS 26.0, *) { .glassEffect(...) } else { .background(.ultraThinMaterial) + tint + thin border }`. Никогда не звать `.glassEffect` напрямую — фолбэк не сработает.
+- **Стор** — `AppStore: ObservableObject` + `@Published`, во вьюхах `@EnvironmentObject`, в `LoginView` — `@ObservedObject`, в `NewLXPApp` — `@StateObject`. `@Observable` / `@Bindable` / `@Environment(AppStore.self)` НЕ использовать (iOS 17+).
+- **TabView** — старый API `.tabItem { Label(...) }`. `Tab(...)` struct и `tabBarMinimizeBehavior` НЕ использовать (iOS 18+).
+- **Анимации** — `.spring(response:dampingFraction:)` или `.easeInOut`. `.snappy` НЕ использовать (iOS 17+).
+
+При добавлении новой фичи проверяй availability нового API (Apple Docs → Availability). Если фича есть только на iOS 17+, либо обернуть в `#available`, либо найти эквивалент.
 
 ## API
 
@@ -43,7 +54,9 @@ NewLXP/
 ├── Components.swift         — Переиспользуемые компоненты
 ├── Models.swift             — UI-модели (Lesson, Discipline, Topic, Profile, GroupMate, …)
 ├── AppData.swift            — MockData (пустые дефолты для signOut)
-├── AppStore.swift           — @Observable singleton-стор: всё состояние, загрузка, дайджест, посещаемость
+├── AppStore.swift           — ObservableObject singleton-стор: всё состояние, загрузка, дайджест, посещаемость
+├── Cache.swift              — `DiskCache`: write-through JSON-кэш под `Library/Caches/LXPCache/` для тёплого старта
+├── GlassEffect.swift        — `lxpGlass*` хелперы со SafeFallback на iOS 16-25 (`.ultraThinMaterial`)
 ├── Networking.swift         — TokenStore + Apollo client + AuthHeadersInterceptor + LXPError
 ├── Repositories.swift       — Auth/Profile/Schedule/Disciplines/Tasks/Topic — обёртки над Apollo
 ├── Mapping.swift             — GraphQL enum → UI enum (attendance, topic status), DateFormatters
@@ -70,17 +83,18 @@ scripts/
 
 ## Стор и загрузка данных
 
-Всё состояние держит `AppStore.shared` (`@Observable @MainActor final class`). Во вьюхах подписываемся через `@Environment(AppStore.self) private var store`. `RootView` смотрит на `store.isAuthenticated`.
+Всё состояние держит `AppStore.shared` (`final class AppStore: ObservableObject @MainActor`). Поля помечены `@Published`. Во вьюхах подписка через `@EnvironmentObject private var store: AppStore`. В `NewLXPApp` инжектится `@StateObject` + `.environmentObject(store)`. `RootView` смотрит на `store.isAuthenticated`.
 
 Жизненный цикл:
-1. `NewLXPApp.task` → `store.bootstrap()` (если есть токен).
-2. `bootstrap` → `refreshAll`: сначала `loadProfile` (даёт `studentId`), затем параллельно через `withTaskGroup`: `loadSchedule`, `loadDisciplines`, `loadAssignments`.
+1. `AppStore.init()` синхронно вызывает `hydrateFromCache()` — стор заполняется данными прошлого запуска из `DiskCache`. UI рендерится мгновенно.
+2. `NewLXPApp.task` → `store.bootstrap()` (если есть токен) → `refreshAll`: сначала `loadProfile` (даёт `studentId`), затем параллельно через `withTaskGroup`: `loadSchedule`, `loadDisciplines`, `loadAssignments`. Если `studentId` уже сохранён в `TokenStore`, профиль грузится параллельно с остальным.
 3. После `signIn` тоже зовётся `refreshAll`.
+4. После каждой успешной сетевой загрузки — write-through в `DiskCache` (отдельный JSON-файл на ключ).
 
 Кеши:
-- `lessonsByDay: [Date: [Lesson]]` + `loadedRanges: [DateInterval]` — повторно одну неделю не качаем.
-- `disciplineDetails: [String: DisciplineDetail]`, `topicDetails: [String: TopicDetail]` — лениво по запросу.
-- При signOut всё чистится в `MockData` (пустые значения).
+- **In-memory** (на сторе): `lessonsByDay: [Date: [Lesson]]` + `loadedRanges: [DateInterval]` — повторно одну неделю не качаем. `disciplineDetails: [String: DisciplineDetail]`, `topicDetails: [String: TopicDetail]` — лениво по запросу.
+- **На диске** (`Library/Caches/LXPCache/*.json`, ключи `Profile/lessonsByDay/loadedRanges/disciplines/disciplineDetails/topicDetails/assignments`): сериализуются как `Codable` через `JSONEncoder`/`JSONDecoder` с `dateEncodingStrategy = .iso8601`. Все UI-модели — `Codable`. На decode-ошибке файл удаляется. **Почему JSON, а не Core Data**: данные мелкие (<100К суммарно), структура — это уже Swift-коллекции, никаких запросов по полям не нужно, миграции дешёвые (упал decode → грузим с сети). Core Data была бы оверкилл.
+- При signOut и `TokenStore.clear()` чистится `MockData` (пустые) И `DiskCache.clearAll()`.
 
 Производные данные (computed на сторе):
 - `dailyDigest: Digest` — собирается из ближайшей пары (с `topicId`), открытых дедлайнов (с `topicId`), просроченных, итога по парам сегодня, посещаемости за неделю.
@@ -108,13 +122,15 @@ scripts/
 
 ## Дизайн-система
 
-**Стеклянный эффект** — основной визуальный примитив:
+**Стеклянный эффект** — основной визуальный примитив, всегда через хелперы из `GlassEffect.swift`:
 ```swift
-.glassEffect(.regular, in: .rect(cornerRadius: 22))
-.glassEffect(.regular.tint(.orange.opacity(0.18)), in: .rect(cornerRadius: 20))
-.glassEffect(.regular, in: .capsule)
-.glassEffect(.regular, in: .circle)
+.lxpGlass(cornerRadius: 22)
+.lxpGlass(cornerRadius: 20, tint: .orange.opacity(0.18))
+.lxpGlassCapsule()
+.lxpGlassCapsule(tint: .primary.opacity(0.18))
+.lxpGlassCircle()
 ```
+Никогда не вызывать `.glassEffect(...)` напрямую — пропустишь iOS 16-25 фолбэк (`.ultraThinMaterial` + тонкая обводка).
 
 **Ключевые компоненты** (`Components.swift`):
 - `GlassCard` — обёртка с padding + glassEffect

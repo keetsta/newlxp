@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ScheduleView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var weekAnchor = Calendar.current.startOfDay(for: Date())
 
@@ -51,7 +51,7 @@ struct ScheduleView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .frame(width: 36, height: 36)
-                    .glassEffect(.regular, in: .circle)
+                    .lxpGlassCircle()
             }
             .buttonStyle(.plain)
 
@@ -70,7 +70,7 @@ struct ScheduleView: View {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .frame(width: 36, height: 36)
-                    .glassEffect(.regular, in: .circle)
+                    .lxpGlassCircle()
             }
             .buttonStyle(.plain)
         }
@@ -121,7 +121,7 @@ struct ScheduleView: View {
 
     private func shiftWeek(by weeks: Int) {
         guard let newAnchor = Calendar.current.date(byAdding: .weekOfYear, value: weeks, to: weekAnchor) else { return }
-        withAnimation(.snappy) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             weekAnchor = newAnchor
             // Pick first day of the new week as selected.
             selectedDate = startOfWeek(for: newAnchor)
@@ -130,13 +130,13 @@ struct ScheduleView: View {
     }
 
     private func selectDay(_ day: Date) {
-        withAnimation(.snappy) { selectedDate = day }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { selectedDate = day }
         Task { await store.ensureScheduleAround(day) }
     }
 
     private func selectToday() {
         let today = Calendar.current.startOfDay(for: Date())
-        withAnimation(.snappy) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             weekAnchor = today
             selectedDate = today
         }
@@ -146,11 +146,13 @@ struct ScheduleView: View {
     // MARK: - Summary
 
     private var weekSummary: some View {
-        let wa = store.weekAttendance()
+        let wa = store.weekAttendance(forAnchor: weekAnchor)
         let rate = wa.rate
         let pct = Int((rate * 100).rounded())
+        let cal = Calendar.current
+        let isCurrentWeek = cal.isDate(weekAnchor, equalTo: Date(), toGranularity: .weekOfYear)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("Посещаемость за неделю")
+            Text(isCurrentWeek ? "Посещаемость за неделю" : "Посещаемость недели")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -162,7 +164,7 @@ struct ScheduleView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Нет данных за последние 7 дней")
+                    Text(isCurrentWeek ? "Пока нет завершённых пар" : "Нет данных за эту неделю")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -171,7 +173,7 @@ struct ScheduleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
         .padding(.horizontal, 18)
     }
 
@@ -211,7 +213,7 @@ struct ScheduleView: View {
                 }
                 .background {
                     RoundedRectangle(cornerRadius: 24).fill(Color.clear)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+                        .lxpGlass(cornerRadius: 24)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 24))
                 .padding(.horizontal, 18)
@@ -233,7 +235,7 @@ struct ScheduleView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
         .padding(.horizontal, 16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
         .padding(.horizontal, 18)
     }
 
@@ -280,8 +282,7 @@ struct DayChip: View {
             }
             .frame(height: 78)
             .frame(maxWidth: .infinity)
-            .glassEffect(isSelected ? .regular.tint(.accentColor.opacity(0.22)) : .regular,
-                          in: .rect(cornerRadius: 18))
+            .lxpGlass(cornerRadius: 18, tint: isSelected ? .accentColor.opacity(0.22) : nil)
         }
         .buttonStyle(.plain)
     }
@@ -337,7 +338,7 @@ struct LessonDetailView: View {
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(lesson.attendance.tint)
                 .frame(width: 44, height: 44)
-                .glassEffect(.regular, in: .circle)
+                .lxpGlassCircle()
             VStack(alignment: .leading, spacing: 2) {
                 Text("Посещаемость")
                     .font(.caption.weight(.semibold))
@@ -354,7 +355,7 @@ struct LessonDetailView: View {
             Spacer()
         }
         .padding(16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 
     private var infoCard: some View {
@@ -365,7 +366,7 @@ struct LessonDetailView: View {
             Divider().padding(.leading, 56).opacity(0.4)
             infoRow(symbol: "clock", title: "Время", value: lesson.timeRange)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .lxpGlass(cornerRadius: 22)
     }
 
     private func infoRow(symbol: String, title: String, value: String) -> some View {
@@ -408,7 +409,7 @@ struct LessonDetailView: View {
             }
             .padding(14)
             .contentShape(Rectangle())
-            .glassEffect(.regular.tint(.green.opacity(0.18)), in: .rect(cornerRadius: 22))
+            .lxpGlass(cornerRadius: 22, tint: .green.opacity(0.18))
         }
         .buttonStyle(.plain)
     }
@@ -423,7 +424,7 @@ struct LessonDetailView: View {
                               subtitle: lesson.topic,
                               symbol: "text.book.closed")
                     .padding(16)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                    .lxpGlass(cornerRadius: 22)
             }
             .buttonStyle(.plain)
         }
@@ -431,7 +432,7 @@ struct LessonDetailView: View {
 }
 
 struct TopicDetailView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
     let topicId: String
     let fallbackTitle: String
 
@@ -504,7 +505,7 @@ struct TopicDetailView: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .foregroundStyle(topic.status.tint)
-                            .glassEffect(.regular, in: .capsule)
+                            .lxpGlassCapsule()
                     }
                 } else {
                     Text(fallbackTitle)
@@ -581,7 +582,7 @@ struct TopicContentBlockCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .lxpGlass(cornerRadius: 20)
     }
 
     @ViewBuilder

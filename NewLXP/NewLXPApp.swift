@@ -9,19 +9,21 @@ import SwiftUI
 
 @main
 struct NewLXPApp: App {
-    @State private var store = AppStore.shared
+    @StateObject private var store = AppStore.shared
+    @AppStorage("appearance") private var appearance: AppearanceMode = .system
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(store)
+                .environmentObject(store)
+                .preferredColorScheme(appearance.colorScheme)
                 .task { await store.bootstrap() }
         }
     }
 }
 
 struct RootView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
 
     var body: some View {
         Group {
@@ -31,6 +33,6 @@ struct RootView: View {
                 LoginView(store: store)
             }
         }
-        .animation(.snappy, value: store.isAuthenticated)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.isAuthenticated)
     }
 }

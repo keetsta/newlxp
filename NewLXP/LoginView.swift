@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LoginView: View {
-    @Bindable var store: AppStore
+    @ObservedObject var store: AppStore
     @State private var email: String = ""
     @State private var password: String = ""
     @FocusState private var focus: Field?
@@ -16,7 +16,7 @@ struct LoginView: View {
                     .font(.system(size: 36, weight: .semibold))
                     .foregroundStyle(.primary)
                     .frame(width: 72, height: 72)
-                    .glassEffect(.regular, in: .circle)
+                    .lxpGlassCircle()
                 Text("LXP IThub")
                     .font(.title.weight(.semibold))
                 Text("Вход для студентов")
@@ -34,7 +34,7 @@ struct LoginView: View {
                     .onSubmit { focus = .password }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                    .lxpGlass(cornerRadius: 16)
 
                 SecureField("Пароль", text: $password)
                     .focused($focus, equals: .password)
@@ -42,7 +42,7 @@ struct LoginView: View {
                     .onSubmit(performLogin)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                    .lxpGlass(cornerRadius: 16)
 
                 if let err = store.authError {
                     Text(err)
@@ -61,7 +61,7 @@ struct LoginView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
                 }
-                .glassEffect(.regular.tint(.accentColor.opacity(0.25)), in: .rect(cornerRadius: 18))
+                .lxpGlass(cornerRadius: 18, tint: .accentColor.opacity(0.25))
                 .buttonStyle(.plain)
                 .disabled(email.isEmpty || password.isEmpty || store.isAuthLoading)
             }

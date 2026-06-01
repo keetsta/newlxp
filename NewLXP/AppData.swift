@@ -7,6 +7,7 @@ enum MockData {
         firstName: "",
         middleName: "",
         email: "",
+        avatar: nil,
         organization: "",
         department: "",
         group: "",
@@ -17,5 +18,4 @@ enum MockData {
 
     static let disciplines: [Discipline] = []
     static let assignments: [Assignment] = []
-    static let diary: [DiaryEntry] = []
 }

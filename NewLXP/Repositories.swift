@@ -71,6 +71,7 @@ enum ProfileRepository {
             firstName: me.firstName ?? "",
             middleName: me.middleName ?? "",
             email: me.email,
+            avatar: me.avatar,
             organization: suborg,
             department: "",
             group: group,
@@ -177,7 +178,8 @@ enum DisciplinesRepository {
                     id: item.id,
                     title: item.name,
                     code: item.code,
-                    totalHours: Int(item.studyHoursCount.rounded())
+                    totalHours: Int(item.studyHoursCount.rounded()),
+                    maxScore: item.maxScore
                 )
             }
     }
@@ -190,7 +192,9 @@ enum DisciplinesRepository {
             id: d.discipline.id,
             title: d.discipline.name,
             code: d.discipline.code,
-            totalHours: Int(d.discipline.studyHoursCount.rounded())
+            totalHours: Int(d.discipline.studyHoursCount.rounded()),
+            maxScore: d.discipline.maxScore,
+            actualMaxScore: d.discipline.actualMaxScoreInTopics
         )
         let topics: [Topic] = d.topics
             .sorted { ($0.topic.order) < ($1.topic.order) }
@@ -208,7 +212,13 @@ enum DisciplinesRepository {
                     hours: t.topic.studyHoursCount
                 )
             }
-        return DisciplineDetail(discipline: discipline, topics: topics, learningGroupId: d.learningGroupId)
+        return DisciplineDetail(
+            discipline: discipline,
+            topics: topics,
+            learningGroupId: d.learningGroupId,
+            scoreForAnsweredTasks: d.scoreForAnsweredTasks,
+            maxScoreForAnsweredTasks: d.maxScoreForAnsweredTasks
+        )
     }
 
     private static func numberFor(order: Double) -> String {

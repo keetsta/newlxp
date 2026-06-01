@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - Models
 
-enum AttendanceStatus: Hashable {
+enum AttendanceStatus: String, Hashable, Codable {
     case present
     case online
     case absent
@@ -62,14 +62,46 @@ enum AttendanceStatus: Hashable {
     }
 }
 
-struct Discipline: Identifiable, Hashable {
+struct Discipline: Identifiable, Hashable, Codable {
     var id: String = UUID().uuidString
     let title: String
     let code: String?
     let totalHours: Int
+    /// Полный максимум баллов за дисциплину (нормировка от сервера). Обычно 100,
+    /// но для коротких курсов бывает 80, 70 и т.д.
+    var maxScore: Double = 0
+    /// Сумма maxScore только тех тем, по которым уже выставлены оценки.
+    /// Знаменатель оценки 2-5 на сайте ITHub — именно этот.
+    var actualMaxScore: Double? = nil
+
+    init(id: String = UUID().uuidString, title: String, code: String?, totalHours: Int, maxScore: Double = 0, actualMaxScore: Double? = nil) {
+        self.id = id
+        self.title = title
+        self.code = code
+        self.totalHours = totalHours
+        self.maxScore = maxScore
+        self.actualMaxScore = actualMaxScore
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, code, totalHours, maxScore, actualMaxScore
+    }
+
+    /// Кастомный декодер — `maxScore`/`actualMaxScore` появились позже, в старых
+    /// JSON-кэшах их нет. Если поля не хватает, подставляем дефолт, чтобы кэш
+    /// не выкидывался целиком.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.code = try c.decodeIfPresent(String.self, forKey: .code)
+        self.totalHours = try c.decode(Int.self, forKey: .totalHours)
+        self.maxScore = try c.decodeIfPresent(Double.self, forKey: .maxScore) ?? 0
+        self.actualMaxScore = try c.decodeIfPresent(Double.self, forKey: .actualMaxScore)
+    }
 }
 
-enum TopicProgress: Hashable {
+enum TopicProgress: String, Hashable, Codable {
     case notStarted
     case inProgress
     case passed
@@ -97,7 +129,7 @@ enum TopicProgress: Hashable {
     }
 }
 
-struct Topic: Identifiable, Hashable {
+struct Topic: Identifiable, Hashable, Codable {
     var id: String = UUID().uuidString
     let number: String
     let title: String
@@ -108,19 +140,46 @@ struct Topic: Identifiable, Hashable {
     var hours: Double = 0
 }
 
-struct DisciplineDetail: Hashable {
+struct DisciplineDetail: Hashable, Codable {
     let discipline: Discipline
     let topics: [Topic]
     let learningGroupId: String?
+    /// Текущие баллы и потолок «по выставленному» — ровно так, как считает сайт ITHub.
+    /// Числитель оценки 2-5 на сайте.
+    var scoreForAnsweredTasks: Double = 0
+    /// Знаменатель «по выставленному» — сумма maxScore тем, где препод работу зафиксировал.
+    var maxScoreForAnsweredTasks: Double = 0
+
+    init(discipline: Discipline, topics: [Topic], learningGroupId: String?, scoreForAnsweredTasks: Double = 0, maxScoreForAnsweredTasks: Double = 0) {
+        self.discipline = discipline
+        self.topics = topics
+        self.learningGroupId = learningGroupId
+        self.scoreForAnsweredTasks = scoreForAnsweredTasks
+        self.maxScoreForAnsweredTasks = maxScoreForAnsweredTasks
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case discipline, topics, learningGroupId, scoreForAnsweredTasks, maxScoreForAnsweredTasks
+    }
+
+    /// Кастомный декодер — поля с баллами появились позже, в старом кэше их нет.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.discipline = try c.decode(Discipline.self, forKey: .discipline)
+        self.topics = try c.decode([Topic].self, forKey: .topics)
+        self.learningGroupId = try c.decodeIfPresent(String.self, forKey: .learningGroupId)
+        self.scoreForAnsweredTasks = try c.decodeIfPresent(Double.self, forKey: .scoreForAnsweredTasks) ?? 0
+        self.maxScoreForAnsweredTasks = try c.decodeIfPresent(Double.self, forKey: .maxScoreForAnsweredTasks) ?? 0
+    }
 }
 
-enum ContentBlockKind: Hashable {
+enum ContentBlockKind: String, Hashable, Codable {
     case info
     case task
     case test
 }
 
-struct TopicContentBlock: Identifiable, Hashable {
+struct TopicContentBlock: Identifiable, Hashable, Codable {
     var id: String
     let kind: ContentBlockKind
     let name: String
@@ -131,13 +190,13 @@ struct TopicContentBlock: Identifiable, Hashable {
     let passDate: Date?
 }
 
-struct TopicDetail: Hashable {
+struct TopicDetail: Hashable, Codable {
     let topic: Topic
     let howToStudy: String?
     let blocks: [TopicContentBlock]
 }
 
-struct Lesson: Identifiable, Hashable {
+struct Lesson: Identifiable, Hashable, Codable {
     var id: String = UUID().uuidString
     let order: Int
     let discipline: String
@@ -162,7 +221,7 @@ struct Lesson: Identifiable, Hashable {
     var isPast: Bool { end < Date() }
 }
 
-enum AssignmentStatus: Hashable {
+enum AssignmentStatus: String, Hashable, Codable {
     case open
     case submitted
     case overdue
@@ -176,7 +235,7 @@ enum AssignmentStatus: Hashable {
     }
 }
 
-struct Assignment: Identifiable, Hashable {
+struct Assignment: Identifiable, Hashable, Codable {
     var id: String = UUID().uuidString
     let title: String
     let discipline: String
@@ -205,16 +264,7 @@ struct Digest: Identifiable, Hashable {
     let events: [DigestEvent]
 }
 
-struct DiaryEntry: Identifiable, Hashable {
-    var id: String = UUID().uuidString
-    let discipline: String
-    let topic: String
-    let topicId: String?
-    let date: Date
-    let attendance: AttendanceStatus
-}
-
-struct GroupMate: Identifiable, Hashable {
+struct GroupMate: Identifiable, Hashable, Codable {
     var id: String
     let firstName: String
     let lastName: String
@@ -234,11 +284,12 @@ struct GroupMate: Identifiable, Hashable {
     }
 }
 
-struct Profile: Hashable {
+struct Profile: Hashable, Codable {
     let lastName: String
     let firstName: String
     let middleName: String
     let email: String
+    let avatar: String?
     let organization: String
     let department: String
     let group: String

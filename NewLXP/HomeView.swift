@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @Environment(AppStore.self) private var store
+    @EnvironmentObject private var store: AppStore
 
     private var lessons: [Lesson] { store.todayLessons }
     private var current: Lesson? { store.currentLesson }
@@ -70,7 +70,7 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
-                        .glassEffect(.regular, in: .capsule)
+                        .lxpGlassCapsule()
                 }
                 Text(lesson.discipline)
                     .font(.title2.weight(.semibold))
@@ -114,7 +114,7 @@ struct HomeView: View {
                 Image(systemName: "sparkles")
                     .font(.body.weight(.semibold))
                     .frame(width: 32, height: 32)
-                    .glassEffect(.regular, in: .circle)
+                    .lxpGlassCircle()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Дайджест дня")
                         .font(.caption.weight(.semibold))
@@ -132,7 +132,7 @@ struct HomeView: View {
                     .foregroundStyle(.tertiary)
             }
             .padding(16)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            .lxpGlass(cornerRadius: 22)
         }
         .buttonStyle(.plain)
     }
@@ -156,7 +156,7 @@ struct HomeView: View {
             .background {
                 RoundedRectangle(cornerRadius: 24)
                     .fill(Color.clear)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 24))
+                    .lxpGlass(cornerRadius: 24)
             }
             .clipShape(RoundedRectangle(cornerRadius: 24))
         }

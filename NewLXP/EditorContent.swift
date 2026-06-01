@@ -331,7 +331,6 @@ struct EditorContentView: View {
 
 // MARK: - Remote image with explicit URLSession + diagnostics
 
-@Observable
 @MainActor
 final class RemoteImageLoader {
     static let shared = RemoteImageLoader()
