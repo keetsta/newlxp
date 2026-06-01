@@ -1,19 +1,21 @@
 import SwiftUI
 
 struct ScheduleView: View {
+    @Environment(AppStore.self) private var store
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
+    @State private var weekAnchor = Calendar.current.startOfDay(for: Date())
 
-    private var lessons: [Lesson] { AppStore.shared.lessons(on: selectedDate) }
+    private var lessons: [Lesson] { store.lessons(on: selectedDate) }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
+                    weekHeader
                     weekStrip
-                    monthSummary
+                    weekSummary
                     lessonList
                 }
-                .padding(.horizontal, 18)
                 .padding(.top, 4)
                 .padding(.bottom, 32)
             }
@@ -24,72 +26,215 @@ struct ScheduleView: View {
             .navigationDestination(for: Lesson.self) { lesson in
                 LessonDetailView(lesson: lesson)
             }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !Calendar.current.isDateInToday(selectedDate) {
+                        Button("Сегодня") { selectToday() }
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+            }
+            .task {
+                await store.ensureScheduleAround(selectedDate)
+            }
         }
+    }
+
+    // MARK: - Week navigation
+
+    private var weekHeader: some View {
+        HStack {
+            Button {
+                shiftWeek(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .glassEffect(.regular, in: .circle)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text(weekRangeTitle)
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+
+            Spacer()
+
+            Button {
+                shiftWeek(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .glassEffect(.regular, in: .circle)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18)
     }
 
     private var weekStrip: some View {
         let cal = Calendar.current
-        let weekStart = cal.date(byAdding: .day, value: -3, to: cal.startOfDay(for: Date()))!
+        let weekStart = startOfWeek(for: weekAnchor)
         let days = (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: weekStart) }
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(days, id: \.self) { day in
-                    DayChip(date: day,
-                            isSelected: cal.isDate(day, inSameDayAs: selectedDate),
-                            isToday: cal.isDateInToday(day)) {
-                        withAnimation(.snappy) { selectedDate = day }
-                    }
+        return HStack(spacing: 8) {
+            ForEach(days, id: \.self) { day in
+                DayChip(date: day,
+                        isSelected: cal.isDate(day, inSameDayAs: selectedDate),
+                        isToday: cal.isDateInToday(day)) {
+                    selectDay(day)
                 }
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 4)
         }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 6)
     }
 
-    private var monthSummary: some View {
-        HStack(spacing: 12) {
-            let attended = AppStore.shared.disciplines.reduce(0) { $0 + $1.attendedHours }
-            let total = AppStore.shared.disciplines.reduce(0) { $0 + $1.totalHours }
-            let rate = total > 0 ? Double(attended) / Double(total) : 0
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Посещено в этом месяце")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(Int(rate * 100))%")
-                        .font(.system(size: 28, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    Text("\(attended) из \(total) ч")
+    private var weekRangeTitle: String {
+        let cal = Calendar.current
+        let start = startOfWeek(for: weekAnchor)
+        let end = cal.date(byAdding: .day, value: 6, to: start)!
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        if cal.component(.month, from: start) == cal.component(.month, from: end) {
+            f.dateFormat = "d"
+            let s = f.string(from: start)
+            f.dateFormat = "d MMMM"
+            let e = f.string(from: end)
+            return "\(s)–\(e)"
+        }
+        f.dateFormat = "d MMM"
+        return "\(f.string(from: start)) – \(f.string(from: end))"
+    }
+
+    private func startOfWeek(for date: Date) -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Monday
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
+        return cal.date(from: comps)!
+    }
+
+    private func shiftWeek(by weeks: Int) {
+        guard let newAnchor = Calendar.current.date(byAdding: .weekOfYear, value: weeks, to: weekAnchor) else { return }
+        withAnimation(.snappy) {
+            weekAnchor = newAnchor
+            // Pick first day of the new week as selected.
+            selectedDate = startOfWeek(for: newAnchor)
+        }
+        Task { await store.ensureScheduleAround(newAnchor) }
+    }
+
+    private func selectDay(_ day: Date) {
+        withAnimation(.snappy) { selectedDate = day }
+        Task { await store.ensureScheduleAround(day) }
+    }
+
+    private func selectToday() {
+        let today = Calendar.current.startOfDay(for: Date())
+        withAnimation(.snappy) {
+            weekAnchor = today
+            selectedDate = today
+        }
+        Task { await store.ensureScheduleAround(today) }
+    }
+
+    // MARK: - Summary
+
+    private var weekSummary: some View {
+        let wa = store.weekAttendance()
+        let rate = wa.rate
+        let pct = Int((rate * 100).rounded())
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Посещаемость за неделю")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(wa.totalHours > 0 ? "\(pct)%" : "—")
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                if wa.totalHours > 0 {
+                    Text(detailLine(wa))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Нет данных за последние 7 дней")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                AttendanceBar(rate: rate)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            AttendanceBar(rate: rate)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .padding(.horizontal, 18)
     }
+
+    private func detailLine(_ wa: AppStore.AttendanceMetric) -> String {
+        let attended = formatHours(wa.attendedHours)
+        let total = formatHours(wa.totalHours)
+        if wa.missedHours > 0 {
+            return "\(attended) из \(total) ч · пропущено \(formatHours(wa.missedHours)) ч"
+        }
+        return "\(attended) из \(total) ч"
+    }
+
+    private func formatHours(_ h: Double) -> String {
+        if h.rounded() == h { return String(Int(h)) }
+        return String(format: "%.1f", h)
+    }
+
+    // MARK: - Lessons
 
     private var lessonList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: dateTitle, trailing: "\(lessons.count) пар")
-            VStack(spacing: 0) {
-                ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
-                    NavigationLink(value: lesson) {
-                        LessonRow(lesson: lesson)
-                    }
-                    .buttonStyle(.plain)
-                    if index < lessons.count - 1 {
-                        Divider().padding(.leading, 16).opacity(0.4)
+            SectionHeader(title: dateTitle, trailing: lessons.isEmpty ? "" : "\(lessons.count) \(RussianPlural.pairs(lessons.count))")
+                .padding(.horizontal, 18)
+            if lessons.isEmpty {
+                emptyState
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
+                        NavigationLink(value: lesson) {
+                            LessonRow(lesson: lesson)
+                        }
+                        .buttonStyle(.plain)
+                        if index < lessons.count - 1 {
+                            Divider().padding(.leading, 16).opacity(0.4)
+                        }
                     }
                 }
+                .background {
+                    RoundedRectangle(cornerRadius: 24).fill(Color.clear)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 24))
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 24))
+                .padding(.horizontal, 18)
             }
-            .background {
-                RoundedRectangle(cornerRadius: 24).fill(Color.clear)
-                    .glassEffect(.regular, in: .rect(cornerRadius: 24))
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 24))
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "calendar.badge.checkmark")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("Пар нет")
+                .font(.subheadline.weight(.semibold))
+            Text("В этот день расписание свободно")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 16)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .padding(.horizontal, 18)
     }
 
     private var dateTitle: String {
@@ -128,13 +273,14 @@ struct DayChip: View {
                 Text(day)
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isToday ? Color.accentColor : .primary)
                 Circle()
                     .frame(width: 4, height: 4)
-                    .foregroundStyle(isToday ? .primary : .secondary)
+                    .foregroundStyle(isToday ? Color.accentColor : .clear)
             }
-            .frame(width: 56, height: 78)
-            .glassEffect(isSelected ? .regular.tint(.primary.opacity(0.15)) : .regular,
+            .frame(height: 78)
+            .frame(maxWidth: .infinity)
+            .glassEffect(isSelected ? .regular.tint(.accentColor.opacity(0.22)) : .regular,
                           in: .rect(cornerRadius: 18))
         }
         .buttonStyle(.plain)
@@ -153,6 +299,9 @@ struct LessonDetailView: View {
                 }
                 if let m = lesson.lateMinutes {
                     LateBanner(minutes: m)
+                }
+                if let link = lesson.meetingLink {
+                    meetingLinkButton(link)
                 }
                 infoCard
                 topicLink
@@ -235,52 +384,83 @@ struct LessonDetailView: View {
         .padding(.horizontal, 16)
     }
 
-    private var topicLink: some View {
-        NavigationLink {
-            TopicDetailView(disciplineTitle: lesson.discipline, topicTitle: lesson.topic)
-        } label: {
-            DisclosureRow(title: "Материалы темы",
-                          subtitle: lesson.topic,
-                          symbol: "text.book.closed")
-                .padding(16)
-                .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    @ViewBuilder
+    private func meetingLinkButton(_ link: URL) -> some View {
+        Link(destination: link) {
+            HStack(spacing: 12) {
+                Image(systemName: "video.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(.green))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Подключиться к занятию")
+                        .font(.subheadline.weight(.semibold))
+                    Text(link.host ?? link.absoluteString)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .contentShape(Rectangle())
+            .glassEffect(.regular.tint(.green.opacity(0.18)), in: .rect(cornerRadius: 22))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var topicLink: some View {
+        if let id = lesson.topicId, !id.isEmpty {
+            NavigationLink {
+                TopicDetailView(topicId: id, fallbackTitle: lesson.topic)
+            } label: {
+                DisclosureRow(title: "Материалы темы",
+                              subtitle: lesson.topic,
+                              symbol: "text.book.closed")
+                    .padding(16)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
 struct TopicDetailView: View {
-    let disciplineTitle: String
-    let topicTitle: String
+    @Environment(AppStore.self) private var store
+    let topicId: String
+    let fallbackTitle: String
+
+    private var detail: TopicDetail? { store.topicDetails[topicId] }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                GlassCard {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(disciplineTitle.uppercased())
-                            .font(.caption.weight(.semibold))
+                header
+                if let d = detail {
+                    if let how = d.howToStudy, !how.isEmpty {
+                        howToStudy(how)
+                    }
+                    if !d.blocks.isEmpty {
+                        blocks(d.blocks)
+                    } else {
+                        Text("Материалов пока нет")
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
-                            .tracking(0.6)
-                        Text(topicTitle)
-                            .font(.title3.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 32)
                     }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    SectionHeader(title: "Содержание")
-                    GlassCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Количество часов для изучения: 4")
-                                .font(.subheadline)
-                            Text("В данной теме познакомимся с новой дисциплиной. Рассмотрим содержание дисциплины, поговорим о правилах выполнения КТ.")
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                            Text("Цель курса — развивать навыки устной и письменной коммуникации, навыки критического мышления и навыки командной работы.")
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                        }
+                } else {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Загружаем материалы…").font(.footnote).foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 24)
                 }
             }
             .padding(.horizontal, 18)
@@ -290,6 +470,163 @@ struct TopicDetailView: View {
         .background(.background)
         .navigationTitle("Тема")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if detail == nil {
+                await store.loadTopicDetail(topicId: topicId)
+            }
+        }
+    }
+
+    private var header: some View {
+        GlassCard(padding: 20, corner: 26) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let topic = detail?.topic {
+                    if topic.isCheckpoint {
+                        Text("Контрольная точка".uppercased())
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.blue)
+                            .tracking(0.6)
+                    }
+                    Text(topic.title)
+                        .font(.title3.weight(.semibold))
+                    HStack(spacing: 14) {
+                        Label("\(formatHours(topic.hours)) ч", systemImage: "clock")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let s = topic.score, let m = topic.maxScore, m > 0 {
+                            Label("\(Int(s.rounded()))/\(Int(m.rounded()))", systemImage: "star")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Spacer()
+                        Text(topic.status.label)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .foregroundStyle(topic.status.tint)
+                            .glassEffect(.regular, in: .capsule)
+                    }
+                } else {
+                    Text(fallbackTitle)
+                        .font(.title3.weight(.semibold))
+                }
+            }
+        }
+    }
+
+    private func howToStudy(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Как изучить")
+            GlassCard {
+                if let blocks = EditorJSParser.parse(text), !blocks.isEmpty {
+                    EditorContentView(blocks: blocks)
+                } else {
+                    Text(InlineHTML.attributed(text))
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    private func blocks(_ list: [TopicContentBlock]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Содержание", trailing: "\(list.count)")
+            VStack(spacing: 10) {
+                ForEach(list) { block in
+                    TopicContentBlockCard(block: block)
+                }
+            }
+        }
+    }
+
+    private func formatHours(_ h: Double) -> String {
+        if h.rounded() == h { return String(Int(h)) }
+        return String(format: "%.1f", h)
+    }
+}
+
+struct TopicContentBlockCard: View {
+    let block: TopicContentBlock
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: kindSymbol)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(kindColor)
+                Text(kindLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(kindColor)
+                    .tracking(0.5)
+                Spacer()
+                if let m = block.maxScore, m > 0 {
+                    Text(scoreText(m: m))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            Text(block.name)
+                .font(.body.weight(.semibold))
+            bodyView
+            if let dl = block.deadline {
+                HStack(spacing: 6) {
+                    Image(systemName: "clock")
+                    Text(deadlineText(dl))
+                }
+                .font(.caption)
+                .foregroundStyle(dl < Date() ? .red : .secondary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+    }
+
+    @ViewBuilder
+    private var bodyView: some View {
+        if !block.body.isEmpty {
+            if let blocks = EditorJSParser.parse(block.body), !blocks.isEmpty {
+                EditorContentView(blocks: blocks)
+            } else {
+                Text(InlineHTML.attributed(block.body))
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var kindSymbol: String {
+        switch block.kind {
+        case .info: "doc.text"
+        case .task: "pencil.and.list.clipboard"
+        case .test: "checkmark.square"
+        }
+    }
+    private var kindLabel: String {
+        switch block.kind {
+        case .info: "ИНФОРМАЦИЯ"
+        case .task: "ЗАДАНИЕ"
+        case .test: "ТЕСТ"
+        }
+    }
+    private var kindColor: Color {
+        switch block.kind {
+        case .info: .secondary
+        case .task: .orange
+        case .test: .blue
+        }
+    }
+    private func scoreText(m: Double) -> String {
+        if let s = block.score { return "\(Int(s.rounded()))/\(Int(m.rounded()))" }
+        return "До \(Int(m.rounded())) б."
+    }
+    private func deadlineText(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        f.dateFormat = "d MMMM, HH:mm"
+        return "Срок: " + f.string(from: d)
     }
 }
 

@@ -4,8 +4,8 @@
 import ApolloAPI
 
 extension LXPSchema.Objects {
-  static let LearningGroupDisciplineAttendance = ApolloAPI.Object(
-    typename: "LearningGroupDisciplineAttendance",
+  static let GetStudentTopicPayload = ApolloAPI.Object(
+    typename: "GetStudentTopicPayload",
     implementedInterfaces: [],
     keyFields: nil
   )

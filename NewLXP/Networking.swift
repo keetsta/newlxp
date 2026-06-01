@@ -8,6 +8,7 @@ enum TokenStore {
     private static let accessKey = "lxp.accessToken"
     private static let refreshKey = "lxp.refreshToken"
     private static let userIdKey = "lxp.userId"
+    private static let studentIdKey = "lxp.studentId"
 
     static var accessToken: String? {
         get { UserDefaults.standard.string(forKey: accessKey) }
@@ -24,10 +25,16 @@ enum TokenStore {
         set { UserDefaults.standard.set(newValue, forKey: userIdKey) }
     }
 
+    static var studentId: String? {
+        get { UserDefaults.standard.string(forKey: studentIdKey) }
+        set { UserDefaults.standard.set(newValue, forKey: studentIdKey) }
+    }
+
     static func clear() {
         accessToken = nil
         refreshToken = nil
         userId = nil
+        studentId = nil
     }
 }
 
@@ -66,10 +73,9 @@ enum LXP {
 
     static let apollo: ApolloClient = {
         let store = ApolloStore()
-        let urlSession = URLSession(configuration: .default)
         let provider = CustomInterceptorProvider()
         let transport = RequestChainNetworkTransport(
-            urlSession: urlSession,
+            urlSession: URLSession.shared,
             interceptorProvider: provider,
             store: store,
             endpointURL: endpoint
@@ -99,15 +105,26 @@ enum LXPError: LocalizedError {
 extension ApolloClient {
     func fetchData<Q: GraphQLQuery>(_ query: Q) async throws -> Q.Data
     where Q.ResponseFormat == SingleResponseFormat {
-        let response: GraphQLResponse<Q> = try await self.fetch(
-            query: query,
-            cachePolicy: .networkOnly
-        )
-        if let errors = response.errors, !errors.isEmpty {
-            let msg = errors.compactMap { $0.message }.joined(separator: "; ")
-            throw LXPError.server(msg.isEmpty ? "GraphQL error" : msg)
+        do {
+            let response: GraphQLResponse<Q> = try await self.fetch(
+                query: query,
+                cachePolicy: .networkOnly
+            )
+            if let errors = response.errors, !errors.isEmpty {
+                let msg = errors.compactMap { $0.message }.joined(separator: "; ")
+                throw LXPError.server(msg.isEmpty ? "GraphQL error" : msg)
+            }
+            guard let data = response.data else { throw LXPError.decoding }
+            return data
+        } catch let urlError as URLError {
+            print("[LXP] URLError code=\(urlError.code.rawValue) desc=\(urlError.localizedDescription) host=\(urlError.failingURL?.host ?? "?")")
+            throw LXPError.server("\(urlError.localizedDescription) (code \(urlError.code.rawValue))")
+        } catch let error as LXPError {
+            print("[LXP] LXPError: \(error.localizedDescription)")
+            throw error
+        } catch {
+            print("[LXP] Other error: \(error)")
+            throw error
         }
-        guard let data = response.data else { throw LXPError.decoding }
-        return data
     }
 }

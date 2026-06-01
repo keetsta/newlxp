@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct HomeView: View {
-    @State private var showNotifications = false
+    @Environment(AppStore.self) private var store
 
-    private var lessons: [Lesson] { AppStore.shared.todayLessons }
-    private var current: Lesson? { AppStore.shared.currentLesson }
-    private var next: Lesson? { AppStore.shared.nextLesson }
-    private var deadline: Assignment? { AppStore.shared.nearestDeadline }
-    private var digest: Digest? { AppStore.shared.digests.first }
+    private var lessons: [Lesson] { store.todayLessons }
+    private var current: Lesson? { store.currentLesson }
+    private var next: Lesson? { store.nextLesson }
+    private var deadline: Assignment? { store.nearestDeadline }
+    private var digest: Digest { store.dailyDigest }
 
     var body: some View {
         NavigationStack {
@@ -29,27 +29,6 @@ struct HomeView: View {
             .navigationDestination(for: Lesson.self) { lesson in
                 LessonDetailView(lesson: lesson)
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showNotifications = true
-                    } label: {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "bell")
-                                .font(.body.weight(.semibold))
-                            if AppStore.shared.unreadNotifications > 0 {
-                                Circle()
-                                    .fill(.red)
-                                    .frame(width: 8, height: 8)
-                                    .offset(x: 4, y: -2)
-                            }
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $showNotifications) {
-                NotificationsView()
-            }
         }
     }
 
@@ -61,7 +40,7 @@ struct HomeView: View {
         } else if let lesson = next {
             let minutes = max(0, Int(lesson.start.timeIntervalSinceNow / 60))
             NavigationLink(value: lesson) {
-                heroCard(lesson: lesson, leading: minutes > 0 ? "Через \(minutes) мин" : "Скоро")
+                heroCard(lesson: lesson, leading: minutes > 0 ? "Через \(formatMinutesAsCountdown(minutes))" : "Скоро")
             }
             .buttonStyle(.plain)
         } else {
@@ -128,41 +107,39 @@ struct HomeView: View {
 
     @ViewBuilder
     private var digestStrip: some View {
-        if let digest {
-            NavigationLink {
-                DigestDetailView(digest: digest)
-            } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: "sparkles")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 32, height: 32)
-                        .glassEffect(.regular, in: .circle)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Дайджест дня")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .tracking(0.5)
-                        Text(digest.oneLine)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+        NavigationLink {
+            DigestDetailView(digest: digest)
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "sparkles")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 32, height: 32)
+                    .glassEffect(.regular, in: .circle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Дайджест дня")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .tracking(0.5)
+                    Text(digest.oneLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
-                .padding(16)
-                .glassEffect(.regular, in: .rect(cornerRadius: 22))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
-            .buttonStyle(.plain)
+            .padding(16)
+            .glassEffect(.regular, in: .rect(cornerRadius: 22))
         }
+        .buttonStyle(.plain)
     }
 
     private var todaySchedule: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Сегодня", trailing: "\(lessons.count) пар")
+            SectionHeader(title: "Сегодня", trailing: "\(lessons.count) \(RussianPlural.pairs(lessons.count))")
             VStack(spacing: 0) {
                 ForEach(Array(lessons.enumerated()), id: \.element.id) { index, lesson in
                     NavigationLink(value: lesson) {

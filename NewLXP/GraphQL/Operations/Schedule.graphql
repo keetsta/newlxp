@@ -1,5 +1,5 @@
-query ClassesForStudentProfile($input: ClassesForStudentProfileInput!, $studentId: UUID!) {
-  classesForStudentProfile(input: $input) {
+query StudentClasses($input: ManyClassesInput!, $studentId: UUID!) {
+  manyClasses(input: $input) {
     id
     from
     to

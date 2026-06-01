@@ -37,11 +37,27 @@ enum LXPMapping {
         guard let status else { return defaultIfMissing }
         switch status {
         case .case(.exist): return .present
-        case .case(.existOnline):
-            // если нет уважительной причины — отметим как неуважительный онлайн
-            return (reason?.isEmpty ?? true) ? .onlineNoReason : .onlineOfficial
+        case .case(.existOnline): return .online
         case .case(.notExist): return .absent
         default: return defaultIfMissing
+        }
+    }
+
+    static func topicStatus(
+        _ status: GraphQLEnum<LXPSchema.TopicStatus>?,
+        isCheckpoint: Bool
+    ) -> TopicProgress {
+        guard let status else { return isCheckpoint ? .checkpoint : .notStarted }
+        switch status {
+        case .case(.passed), .case(.mastered):
+            return .passed
+        case .case(.failed), .case(.notMastered), .case(.overdue):
+            return .failed
+        case .case(.inProgress), .case(.started), .case(.inReview),
+             .case(.forRevision), .case(.forRework), .case(.needHelp):
+            return .inProgress
+        default:
+            return isCheckpoint ? .checkpoint : .notStarted
         }
     }
 }

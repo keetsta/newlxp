@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "GetMe"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query GetMe { getMe { __typename id email firstName lastName middleName avatar isLead student { __typename id learningGroups { __typename id learningGroup { __typename id name suborganization { __typename id name } } } studentSpecialties { __typename specialtyId specialty { __typename id name code suborganization { __typename id name } } } suborganizations_V2 { __typename suborganization { __typename id name } } } } }"#
+        #"query GetMe { getMe { __typename id email firstName lastName middleName avatar isLead student { __typename id learningGroups { __typename learningGroup { __typename id name students { __typename id firstName lastName middleName email avatar } } } studentSpecialties { __typename specialtyId specialty { __typename id name code } } suborganizations_V2 { __typename suborganization { __typename id name } } } } }"#
       ))
 
     public init() {}
@@ -100,15 +100,12 @@ extension LXPSchema {
             static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.StudentLearningGroup }
             static var __selections: [ApolloAPI.Selection] { [
               .field("__typename", String.self),
-              .field("id", LXPSchema.UUID?.self),
               .field("learningGroup", LearningGroup.self),
             ] }
             static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
               GetMeQuery.Data.GetMe.Student.LearningGroup.self
             ] }
 
-            @available(*, deprecated, message: "Этот ID может не приходить, лучше не используйте его а завязывайте на комбинацию studentId и learningGroupId")
-            var id: LXPSchema.UUID? { __data["id"] }
             var learningGroup: LearningGroup { __data["learningGroup"] }
 
             /// GetMe.Student.LearningGroup.LearningGroup
@@ -123,7 +120,7 @@ extension LXPSchema {
                 .field("__typename", String.self),
                 .field("id", LXPSchema.UUID.self),
                 .field("name", String.self),
-                .field("suborganization", Suborganization.self),
+                .field("students", [Student].self),
               ] }
               static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
                 GetMeQuery.Data.GetMe.Student.LearningGroup.LearningGroup.self
@@ -131,28 +128,40 @@ extension LXPSchema {
 
               var id: LXPSchema.UUID { __data["id"] }
               var name: String { __data["name"] }
-              @available(*, deprecated, message: "используйте LearningGroupObjectType.suborganizationV2")
-              var suborganization: Suborganization { __data["suborganization"] }
+              var students: [Student] { __data["students"] }
 
-              /// GetMe.Student.LearningGroup.LearningGroup.Suborganization
+              /// GetMe.Student.LearningGroup.LearningGroup.Student
               ///
-              /// Parent Type: `Suborganization`
-              struct Suborganization: LXPSchema.SelectionSet {
+              /// Parent Type: `User`
+              struct Student: LXPSchema.SelectionSet {
                 let __data: DataDict
                 init(_dataDict: DataDict) { __data = _dataDict }
 
-                static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.Suborganization }
+                static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.User }
                 static var __selections: [ApolloAPI.Selection] { [
                   .field("__typename", String.self),
                   .field("id", LXPSchema.ID.self),
-                  .field("name", String.self),
+                  .field("firstName", String?.self),
+                  .field("lastName", String?.self),
+                  .field("middleName", String?.self),
+                  .field("email", String.self),
+                  .field("avatar", String?.self),
                 ] }
                 static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-                  GetMeQuery.Data.GetMe.Student.LearningGroup.LearningGroup.Suborganization.self
+                  GetMeQuery.Data.GetMe.Student.LearningGroup.LearningGroup.Student.self
                 ] }
 
                 var id: LXPSchema.ID { __data["id"] }
-                var name: String { __data["name"] }
+                /// User first name
+                var firstName: String? { __data["firstName"] }
+                /// User last name
+                var lastName: String? { __data["lastName"] }
+                /// User middle name
+                var middleName: String? { __data["middleName"] }
+                /// User email
+                var email: String { __data["email"] }
+                /// User avatar URL
+                var avatar: String? { __data["avatar"] }
               }
             }
           }
@@ -190,7 +199,6 @@ extension LXPSchema {
                 .field("id", LXPSchema.UUID.self),
                 .field("name", String.self),
                 .field("code", String.self),
-                .field("suborganization", Suborganization.self),
               ] }
               static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
                 GetMeQuery.Data.GetMe.Student.StudentSpecialty.Specialty.self
@@ -199,28 +207,6 @@ extension LXPSchema {
               var id: LXPSchema.UUID { __data["id"] }
               var name: String { __data["name"] }
               var code: String { __data["code"] }
-              var suborganization: Suborganization { __data["suborganization"] }
-
-              /// GetMe.Student.StudentSpecialty.Specialty.Suborganization
-              ///
-              /// Parent Type: `Suborganization`
-              struct Suborganization: LXPSchema.SelectionSet {
-                let __data: DataDict
-                init(_dataDict: DataDict) { __data = _dataDict }
-
-                static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.Suborganization }
-                static var __selections: [ApolloAPI.Selection] { [
-                  .field("__typename", String.self),
-                  .field("id", LXPSchema.ID.self),
-                  .field("name", String.self),
-                ] }
-                static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-                  GetMeQuery.Data.GetMe.Student.StudentSpecialty.Specialty.Suborganization.self
-                ] }
-
-                var id: LXPSchema.ID { __data["id"] }
-                var name: String { __data["name"] }
-              }
             }
           }
 

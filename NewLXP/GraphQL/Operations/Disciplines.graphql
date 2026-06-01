@@ -11,6 +11,7 @@ query StudentDisciplinesByClasses($input: StudentDisciplinesThroughClassesWithPa
       code
       studyHoursCount
       maxScore
+      archivedAt
     }
   }
 }
@@ -26,19 +27,6 @@ query GetStudentDiscipline($input: GetStudentDisciplineInput!) {
     }
     learningGroupId
     sectionId
-    disciplineScore
-    averageAttendance {
-      allAttendance
-      currentAttendance
-      currentExistAttendance
-      percent
-    }
-    averageScores {
-      currentScores
-      maxScore
-      grade
-      deadlineScores
-    }
     topics {
       topicId
       topic {

@@ -5,53 +5,59 @@ import SwiftUI
 
 enum AttendanceStatus: Hashable {
     case present
-    case onlineOfficial
-    case onlineNoReason
+    case online
     case absent
+    case noMark
     case scheduled
 
     var label: String {
         switch self {
         case .present: "Был"
-        case .onlineOfficial: "Был онлайн"
-        case .onlineNoReason: "Был онлайн"
+        case .online: "Был онлайн"
         case .absent: "Не был"
+        case .noMark: "Нет отметки"
         case .scheduled: "Запланировано"
         }
     }
 
-    /// Подпись-причина под основным статусом. Показывается только при отклонении.
-    var reason: String? {
-        switch self {
-        case .onlineNoReason: "без причины"
-        default: nil
-        }
-    }
+    /// Подпись-причина под основным статусом. Сейчас не используется, оставлено
+    /// для совместимости.
+    var reason: String? { nil }
 
     var shortLabel: String {
         switch self {
         case .present: "Был"
-        case .onlineOfficial, .onlineNoReason: "Онлайн"
+        case .online: "Онлайн"
         case .absent: "Не был"
+        case .noMark: "—"
         case .scheduled: ""
         }
     }
 
     var tint: Color {
         switch self {
-        case .present, .onlineOfficial: .green
-        case .onlineNoReason: .red
-        case .absent, .scheduled: .secondary
+        case .present, .online: .green
+        case .absent: .red
+        case .noMark: .secondary
+        case .scheduled: .secondary
         }
     }
 
     var symbol: String {
         switch self {
         case .present: "checkmark.circle.fill"
-        case .onlineOfficial: "wifi.circle.fill"
-        case .onlineNoReason: "wifi.circle"
-        case .absent: "xmark.circle"
+        case .online: "wifi.circle.fill"
+        case .absent: "xmark.circle.fill"
+        case .noMark: "minus.circle"
         case .scheduled: "circle.dotted"
+        }
+    }
+
+    /// Counts toward attendance metric (i.e. lesson actually had a verdict)
+    var hasVerdict: Bool {
+        switch self {
+        case .present, .online, .absent: true
+        case .noMark, .scheduled: false
         }
     }
 }
@@ -59,14 +65,35 @@ enum AttendanceStatus: Hashable {
 struct Discipline: Identifiable, Hashable {
     var id: String = UUID().uuidString
     let title: String
-    let topicsCount: Int
-    let activeDeadlineCount: Int
-    let attendedHours: Int
+    let code: String?
     let totalHours: Int
+}
 
-    var attendanceRate: Double {
-        guard totalHours > 0 else { return 0 }
-        return Double(attendedHours) / Double(totalHours)
+enum TopicProgress: Hashable {
+    case notStarted
+    case inProgress
+    case passed
+    case failed
+    case checkpoint
+
+    var label: String {
+        switch self {
+        case .notStarted: "Не начата"
+        case .inProgress: "В процессе"
+        case .passed: "Сдано"
+        case .failed: "Не сдано"
+        case .checkpoint: "Контрольная точка"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .notStarted: .secondary
+        case .inProgress: .orange
+        case .passed: .green
+        case .failed: .red
+        case .checkpoint: .blue
+        }
     }
 }
 
@@ -75,19 +102,56 @@ struct Topic: Identifiable, Hashable {
     let number: String
     let title: String
     let isCheckpoint: Bool
+    var status: TopicProgress = .notStarted
+    var score: Double? = nil
+    var maxScore: Double? = nil
+    var hours: Double = 0
+}
+
+struct DisciplineDetail: Hashable {
+    let discipline: Discipline
+    let topics: [Topic]
+    let learningGroupId: String?
+}
+
+enum ContentBlockKind: Hashable {
+    case info
+    case task
+    case test
+}
+
+struct TopicContentBlock: Identifiable, Hashable {
+    var id: String
+    let kind: ContentBlockKind
+    let name: String
+    let body: String
+    let maxScore: Double?
+    let score: Double?
+    let deadline: Date?
+    let passDate: Date?
+}
+
+struct TopicDetail: Hashable {
+    let topic: Topic
+    let howToStudy: String?
+    let blocks: [TopicContentBlock]
 }
 
 struct Lesson: Identifiable, Hashable {
     var id: String = UUID().uuidString
     let order: Int
     let discipline: String
+    let disciplineId: String?
     let topic: String
+    let topicId: String?
     let teacher: String
     let location: String
     let start: Date
     let end: Date
     let attendance: AttendanceStatus
     var lateMinutes: Int? = nil
+    var meetingLink: URL? = nil
+    var isOnline: Bool = false
 
     var timeRange: String {
         let f = DateFormatter()
@@ -117,6 +181,7 @@ struct Assignment: Identifiable, Hashable {
     let title: String
     let discipline: String
     let topic: String
+    let topicId: String?
     let deadline: Date
     let status: AssignmentStatus
 }
@@ -127,6 +192,10 @@ struct DigestEvent: Identifiable, Hashable {
     let tint: Color
     let title: String
     let detail: String
+    var topicId: String? = nil
+    var disciplineId: String? = nil
+    var lessonId: String? = nil
+    var assignmentId: String? = nil
 }
 
 struct Digest: Identifiable, Hashable {
@@ -140,7 +209,29 @@ struct DiaryEntry: Identifiable, Hashable {
     var id: String = UUID().uuidString
     let discipline: String
     let topic: String
+    let topicId: String?
     let date: Date
+    let attendance: AttendanceStatus
+}
+
+struct GroupMate: Identifiable, Hashable {
+    var id: String
+    let firstName: String
+    let lastName: String
+    let middleName: String?
+    let email: String?
+    let avatar: String?
+
+    var fullName: String {
+        [lastName, firstName, middleName ?? ""]
+            .filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    var initials: String {
+        let l = lastName.first.map { String($0) } ?? ""
+        let f = firstName.first.map { String($0) } ?? ""
+        return l + f
+    }
 }
 
 struct Profile: Hashable {
@@ -152,4 +243,6 @@ struct Profile: Hashable {
     let department: String
     let group: String
     let speciality: String
+    let learningGroupId: String?
+    let groupMates: [GroupMate]
 }

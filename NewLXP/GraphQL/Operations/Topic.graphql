@@ -1,0 +1,51 @@
+query GetStudentTopic($input: GetStudentTopicInput!) {
+  getStudentTopic(input: $input) {
+    topic {
+      topicId
+      topic {
+        id
+        name
+        order
+        isCheckPoint
+        maxScore
+        studyHoursCount
+        content {
+          howStudyIt
+        }
+      }
+      status
+      topicScore
+      contentBlocks {
+        contentBlockId
+        kind
+        taskDeadline
+        passDate
+        testAvailableFrom
+        testAvailableTo
+        testScore
+        contentBlock {
+          ... on InfoDisciplineTopicContentBlock {
+            id
+            name
+            body
+            order
+          }
+          ... on TaskDisciplineTopicContentBlock {
+            id
+            name
+            body
+            maxScore
+            order
+          }
+          ... on TestDisciplineTopicContentBlock {
+            id
+            name
+            body
+            maxScore
+            order
+          }
+        }
+      }
+    }
+  }
+}

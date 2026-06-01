@@ -1,5 +1,35 @@
 import SwiftUI
 
+enum RussianPlural {
+    /// Picks one of three forms by Russian plural rules.
+    /// - one: «пара», «минута», «час»
+    /// - few: «пары», «минуты», «часа»
+    /// - many: «пар», «минут», «часов»
+    static func form(_ n: Int, one: String, few: String, many: String) -> String {
+        let mod10 = abs(n) % 10
+        let mod100 = abs(n) % 100
+        if mod10 == 1 && mod100 != 11 { return one }
+        if (2...4).contains(mod10) && !(12...14).contains(mod100) { return few }
+        return many
+    }
+
+    static func pairs(_ n: Int) -> String { form(n, one: "пара", few: "пары", many: "пар") }
+    static func minutes(_ n: Int) -> String { form(n, one: "минута", few: "минуты", many: "минут") }
+    static func hours(_ n: Int) -> String { form(n, one: "час", few: "часа", many: "часов") }
+}
+
+/// Formats a positive minute count as a short countdown:
+/// 25 → "25 мин", 60 → "1 ч", 90 → "1 ч 30 мин", 120 → "2 ч".
+func formatMinutesAsCountdown(_ totalMinutes: Int) -> String {
+    let m = max(0, totalMinutes)
+    if m < 60 { return "\(m) \(RussianPlural.minutes(m))" }
+    let hours = m / 60
+    let mins = m % 60
+    let h = "\(hours) \(RussianPlural.hours(hours))"
+    if mins == 0 { return h }
+    return "\(h) \(mins) \(RussianPlural.minutes(mins))"
+}
+
 struct GlassCard<Content: View>: View {
     var padding: CGFloat = 18
     var corner: CGFloat = 24
@@ -41,11 +71,11 @@ struct AttendanceDot: View {
     var body: some View {
         Group {
             switch status {
-            case .present, .onlineOfficial:
+            case .present, .online:
                 Circle().fill(.green)
-            case .onlineNoReason:
-                Circle().fill(.red)
             case .absent:
+                Circle().fill(.red)
+            case .noMark:
                 Circle().strokeBorder(.secondary, lineWidth: 1.5)
             case .scheduled:
                 Circle().strokeBorder(.tertiary, lineWidth: 1)
@@ -161,7 +191,7 @@ struct LateBanner: View {
                     Text("\(minutes)")
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
-                    Text(pluralMinutes(minutes))
+                    Text(RussianPlural.minutes(minutes))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -170,13 +200,6 @@ struct LateBanner: View {
         }
         .padding(14)
         .glassEffect(.regular.tint(.orange.opacity(0.18)), in: .rect(cornerRadius: 20))
-    }
-
-    private func pluralMinutes(_ n: Int) -> String {
-        let mod10 = n % 10, mod100 = n % 100
-        if mod10 == 1 && mod100 != 11 { return "минута" }
-        if (2...4).contains(mod10) && !(12...14).contains(mod100) { return "минуты" }
-        return "минут"
     }
 }
 
@@ -240,6 +263,7 @@ struct LessonRow: View {
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 16)
+        .contentShape(Rectangle())
     }
 }
 
@@ -263,6 +287,7 @@ struct CountTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
+        .contentShape(Rectangle())
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
     }
 }

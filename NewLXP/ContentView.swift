@@ -13,7 +13,6 @@ struct ContentView: View {
                 ServicesView()
             }
         }
-        .tabBarMinimizeBehavior(.onScrollDown)
     }
 }
 

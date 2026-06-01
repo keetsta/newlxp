@@ -5,18 +5,18 @@
 @_spi(Execution) @_spi(Unsafe) import ApolloAPI
 
 extension LXPSchema {
-  struct ClassesForStudentProfileQuery: GraphQLQuery {
-    static let operationName: String = "ClassesForStudentProfile"
+  struct StudentClassesQuery: GraphQLQuery {
+    static let operationName: String = "StudentClasses"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query ClassesForStudentProfile($input: ClassesForStudentProfileInput!, $studentId: UUID!) { classesForStudentProfile(input: $input) { __typename id from to name isOnline meetingLink learningGroupId learningGroup { __typename id name } classroom { __typename id name buildingArea { __typename id name address } } discipline { __typename id name code } topics { __typename id name isCheckPoint } teachers { __typename id user { __typename id firstName lastName middleName } } attendance(studentId: $studentId) { __typename id status lateStatus reason } } }"#
+        #"query StudentClasses($input: ManyClassesInput!, $studentId: UUID!) { manyClasses(input: $input) { __typename id from to name isOnline meetingLink learningGroupId learningGroup { __typename id name } classroom { __typename id name buildingArea { __typename id name address } } discipline { __typename id name code } topics { __typename id name isCheckPoint } teachers { __typename id user { __typename id firstName lastName middleName } } attendance(studentId: $studentId) { __typename id status lateStatus reason } } }"#
       ))
 
-    public var input: ClassesForStudentProfileInput
+    public var input: ManyClassesInput
     public var studentId: UUID
 
     public init(
-      input: ClassesForStudentProfileInput,
+      input: ManyClassesInput,
       studentId: UUID
     ) {
       self.input = input
@@ -34,18 +34,18 @@ extension LXPSchema {
 
       static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.Query }
       static var __selections: [ApolloAPI.Selection] { [
-        .field("classesForStudentProfile", [ClassesForStudentProfile].self, arguments: ["input": .variable("input")]),
+        .field("manyClasses", [ManyClass].self, arguments: ["input": .variable("input")]),
       ] }
       static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-        ClassesForStudentProfileQuery.Data.self
+        StudentClassesQuery.Data.self
       ] }
 
-      var classesForStudentProfile: [ClassesForStudentProfile] { __data["classesForStudentProfile"] }
+      var manyClasses: [ManyClass] { __data["manyClasses"] }
 
-      /// ClassesForStudentProfile
+      /// ManyClass
       ///
       /// Parent Type: `Class`
-      struct ClassesForStudentProfile: LXPSchema.SelectionSet {
+      struct ManyClass: LXPSchema.SelectionSet {
         let __data: DataDict
         init(_dataDict: DataDict) { __data = _dataDict }
 
@@ -67,7 +67,7 @@ extension LXPSchema {
           .field("attendance", [Attendance]?.self, arguments: ["studentId": .variable("studentId")]),
         ] }
         static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-          ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.self
+          StudentClassesQuery.Data.ManyClass.self
         ] }
 
         var id: LXPSchema.UUID { __data["id"] }
@@ -84,7 +84,7 @@ extension LXPSchema {
         var teachers: [Teacher]? { __data["teachers"] }
         var attendance: [Attendance]? { __data["attendance"] }
 
-        /// ClassesForStudentProfile.LearningGroup
+        /// ManyClass.LearningGroup
         ///
         /// Parent Type: `LearningGroup`
         struct LearningGroup: LXPSchema.SelectionSet {
@@ -98,14 +98,14 @@ extension LXPSchema {
             .field("name", String.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.LearningGroup.self
+            StudentClassesQuery.Data.ManyClass.LearningGroup.self
           ] }
 
           var id: LXPSchema.UUID { __data["id"] }
           var name: String { __data["name"] }
         }
 
-        /// ClassesForStudentProfile.Classroom
+        /// ManyClass.Classroom
         ///
         /// Parent Type: `Classroom`
         struct Classroom: LXPSchema.SelectionSet {
@@ -120,14 +120,14 @@ extension LXPSchema {
             .field("buildingArea", BuildingArea?.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Classroom.self
+            StudentClassesQuery.Data.ManyClass.Classroom.self
           ] }
 
           var id: LXPSchema.UUID { __data["id"] }
           var name: String { __data["name"] }
           var buildingArea: BuildingArea? { __data["buildingArea"] }
 
-          /// ClassesForStudentProfile.Classroom.BuildingArea
+          /// ManyClass.Classroom.BuildingArea
           ///
           /// Parent Type: `BuildingArea`
           struct BuildingArea: LXPSchema.SelectionSet {
@@ -142,7 +142,7 @@ extension LXPSchema {
               .field("address", String.self),
             ] }
             static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-              ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Classroom.BuildingArea.self
+              StudentClassesQuery.Data.ManyClass.Classroom.BuildingArea.self
             ] }
 
             var id: LXPSchema.UUID { __data["id"] }
@@ -151,7 +151,7 @@ extension LXPSchema {
           }
         }
 
-        /// ClassesForStudentProfile.Discipline
+        /// ManyClass.Discipline
         ///
         /// Parent Type: `Discipline`
         struct Discipline: LXPSchema.SelectionSet {
@@ -166,7 +166,7 @@ extension LXPSchema {
             .field("code", String?.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Discipline.self
+            StudentClassesQuery.Data.ManyClass.Discipline.self
           ] }
 
           var id: LXPSchema.UUID { __data["id"] }
@@ -174,7 +174,7 @@ extension LXPSchema {
           var code: String? { __data["code"] }
         }
 
-        /// ClassesForStudentProfile.Topic
+        /// ManyClass.Topic
         ///
         /// Parent Type: `DisciplineTopic`
         struct Topic: LXPSchema.SelectionSet {
@@ -189,7 +189,7 @@ extension LXPSchema {
             .field("isCheckPoint", Bool.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Topic.self
+            StudentClassesQuery.Data.ManyClass.Topic.self
           ] }
 
           var id: LXPSchema.UUID { __data["id"] }
@@ -197,7 +197,7 @@ extension LXPSchema {
           var isCheckPoint: Bool { __data["isCheckPoint"] }
         }
 
-        /// ClassesForStudentProfile.Teacher
+        /// ManyClass.Teacher
         ///
         /// Parent Type: `Teacher`
         struct Teacher: LXPSchema.SelectionSet {
@@ -211,13 +211,13 @@ extension LXPSchema {
             .field("user", User.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Teacher.self
+            StudentClassesQuery.Data.ManyClass.Teacher.self
           ] }
 
           var id: LXPSchema.ID { __data["id"] }
           var user: User { __data["user"] }
 
-          /// ClassesForStudentProfile.Teacher.User
+          /// ManyClass.Teacher.User
           ///
           /// Parent Type: `User`
           struct User: LXPSchema.SelectionSet {
@@ -233,7 +233,7 @@ extension LXPSchema {
               .field("middleName", String?.self),
             ] }
             static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-              ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Teacher.User.self
+              StudentClassesQuery.Data.ManyClass.Teacher.User.self
             ] }
 
             var id: LXPSchema.ID { __data["id"] }
@@ -246,7 +246,7 @@ extension LXPSchema {
           }
         }
 
-        /// ClassesForStudentProfile.Attendance
+        /// ManyClass.Attendance
         ///
         /// Parent Type: `ClassAttendance`
         struct Attendance: LXPSchema.SelectionSet {
@@ -262,7 +262,7 @@ extension LXPSchema {
             .field("reason", String?.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            ClassesForStudentProfileQuery.Data.ClassesForStudentProfile.Attendance.self
+            StudentClassesQuery.Data.ManyClass.Attendance.self
           ] }
 
           var id: LXPSchema.UUID { __data["id"] }

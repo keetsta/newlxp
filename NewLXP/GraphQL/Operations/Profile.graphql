@@ -10,13 +10,16 @@ query GetMe {
     student {
       id
       learningGroups {
-        id
         learningGroup {
           id
           name
-          suborganization {
+          students {
             id
-            name
+            firstName
+            lastName
+            middleName
+            email
+            avatar
           }
         }
       }
@@ -26,10 +29,6 @@ query GetMe {
           id
           name
           code
-          suborganization {
-            id
-            name
-          }
         }
       }
       suborganizations_V2 {

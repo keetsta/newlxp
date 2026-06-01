@@ -35,10 +35,10 @@ extension LXPSchema {
       case "Classroom": return LXPSchema.Objects.Classroom
       case "Discipline": return LXPSchema.Objects.Discipline
       case "DisciplineTopic": return LXPSchema.Objects.DisciplineTopic
+      case "DisciplineTopicContent": return LXPSchema.Objects.DisciplineTopicContent
+      case "GetStudentTopicPayload": return LXPSchema.Objects.GetStudentTopicPayload
       case "InfoDisciplineTopicContentBlock": return LXPSchema.Objects.InfoDisciplineTopicContentBlock
       case "LearningGroup": return LXPSchema.Objects.LearningGroup
-      case "LearningGroupDisciplineAttendance": return LXPSchema.Objects.LearningGroupDisciplineAttendance
-      case "LearningGroupDisciplineScores": return LXPSchema.Objects.LearningGroupDisciplineScores
       case "Query": return LXPSchema.Objects.Query
       case "RefreshTokenPayload": return LXPSchema.Objects.RefreshTokenPayload
       case "SignInPayload": return LXPSchema.Objects.SignInPayload

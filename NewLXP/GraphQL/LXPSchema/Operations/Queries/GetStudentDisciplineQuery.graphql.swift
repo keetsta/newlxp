@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "GetStudentDiscipline"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query GetStudentDiscipline($input: GetStudentDisciplineInput!) { getStudentDiscipline(input: $input) { __typename discipline { __typename id name code studyHoursCount maxScore } learningGroupId sectionId disciplineScore averageAttendance { __typename allAttendance currentAttendance currentExistAttendance percent } averageScores { __typename currentScores maxScore grade deadlineScores } topics { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount } status topicScore } } }"#
+        #"query GetStudentDiscipline($input: GetStudentDisciplineInput!) { getStudentDiscipline(input: $input) { __typename discipline { __typename id name code studyHoursCount maxScore } learningGroupId sectionId topics { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount } status topicScore } } }"#
       ))
 
     public var input: GetStudentDisciplineInput
@@ -47,9 +47,6 @@ extension LXPSchema {
           .field("discipline", Discipline.self),
           .field("learningGroupId", LXPSchema.UUID?.self),
           .field("sectionId", LXPSchema.UUID?.self),
-          .field("disciplineScore", Double.self),
-          .field("averageAttendance", AverageAttendance.self),
-          .field("averageScores", AverageScores.self),
           .field("topics", [Topic].self),
         ] }
         static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
@@ -59,10 +56,6 @@ extension LXPSchema {
         var discipline: Discipline { __data["discipline"] }
         var learningGroupId: LXPSchema.UUID? { __data["learningGroupId"] }
         var sectionId: LXPSchema.UUID? { __data["sectionId"] }
-        @available(*, deprecated, message: "Используйте scoreForAnsweredTasks")
-        var disciplineScore: Double { __data["disciplineScore"] }
-        var averageAttendance: AverageAttendance { __data["averageAttendance"] }
-        var averageScores: AverageScores { __data["averageScores"] }
         var topics: [Topic] { __data["topics"] }
 
         /// GetStudentDiscipline.Discipline
@@ -90,56 +83,6 @@ extension LXPSchema {
           var code: String? { __data["code"] }
           var studyHoursCount: Double { __data["studyHoursCount"] }
           var maxScore: Double { __data["maxScore"] }
-        }
-
-        /// GetStudentDiscipline.AverageAttendance
-        ///
-        /// Parent Type: `LearningGroupDisciplineAttendance`
-        struct AverageAttendance: LXPSchema.SelectionSet {
-          let __data: DataDict
-          init(_dataDict: DataDict) { __data = _dataDict }
-
-          static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.LearningGroupDisciplineAttendance }
-          static var __selections: [ApolloAPI.Selection] { [
-            .field("__typename", String.self),
-            .field("allAttendance", Double.self),
-            .field("currentAttendance", Double.self),
-            .field("currentExistAttendance", Double.self),
-            .field("percent", Double.self),
-          ] }
-          static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            GetStudentDisciplineQuery.Data.GetStudentDiscipline.AverageAttendance.self
-          ] }
-
-          var allAttendance: Double { __data["allAttendance"] }
-          var currentAttendance: Double { __data["currentAttendance"] }
-          var currentExistAttendance: Double { __data["currentExistAttendance"] }
-          var percent: Double { __data["percent"] }
-        }
-
-        /// GetStudentDiscipline.AverageScores
-        ///
-        /// Parent Type: `LearningGroupDisciplineScores`
-        struct AverageScores: LXPSchema.SelectionSet {
-          let __data: DataDict
-          init(_dataDict: DataDict) { __data = _dataDict }
-
-          static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.LearningGroupDisciplineScores }
-          static var __selections: [ApolloAPI.Selection] { [
-            .field("__typename", String.self),
-            .field("currentScores", Double.self),
-            .field("maxScore", Double.self),
-            .field("grade", Double.self),
-            .field("deadlineScores", Double.self),
-          ] }
-          static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
-            GetStudentDisciplineQuery.Data.GetStudentDiscipline.AverageScores.self
-          ] }
-
-          var currentScores: Double { __data["currentScores"] }
-          var maxScore: Double { __data["maxScore"] }
-          var grade: Double { __data["grade"] }
-          var deadlineScores: Double { __data["deadlineScores"] }
         }
 
         /// GetStudentDiscipline.Topic

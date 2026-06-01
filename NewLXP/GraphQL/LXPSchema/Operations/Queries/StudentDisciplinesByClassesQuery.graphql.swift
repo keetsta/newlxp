@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "StudentDisciplinesByClasses"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query StudentDisciplinesByClasses($input: StudentDisciplinesThroughClassesWithPaginationInput!) { studentDisciplinesThroughClassesWithPagination(input: $input) { __typename page perPage total totalPages hasMore items { __typename id name code studyHoursCount maxScore } } }"#
+        #"query StudentDisciplinesByClasses($input: StudentDisciplinesThroughClassesWithPaginationInput!) { studentDisciplinesThroughClassesWithPagination(input: $input) { __typename page perPage total totalPages hasMore items { __typename id name code studyHoursCount maxScore archivedAt } } }"#
       ))
 
     public var input: StudentDisciplinesThroughClassesWithPaginationInput
@@ -78,6 +78,7 @@ extension LXPSchema {
             .field("code", String?.self),
             .field("studyHoursCount", Double.self),
             .field("maxScore", Double.self),
+            .field("archivedAt", LXPSchema.DateTime?.self),
           ] }
           static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
             StudentDisciplinesByClassesQuery.Data.StudentDisciplinesThroughClassesWithPagination.Item.self
@@ -88,6 +89,7 @@ extension LXPSchema {
           var code: String? { __data["code"] }
           var studyHoursCount: Double { __data["studyHoursCount"] }
           var maxScore: Double { __data["maxScore"] }
+          var archivedAt: LXPSchema.DateTime? { __data["archivedAt"] }
         }
       }
     }
