@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "GetStudentDiscipline"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query GetStudentDiscipline($input: GetStudentDisciplineInput!) { getStudentDiscipline(input: $input) { __typename discipline { __typename id name code studyHoursCount maxScore } scoreForAnsweredTasks maxScoreForAnsweredTasks learningGroupId sectionId topics { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount } status topicScore } } }"#
+        #"query GetStudentDiscipline($input: GetStudentDisciplineInput!) { getStudentDiscipline(input: $input) { __typename discipline { __typename id name code studyHoursCount maxScore } scoreForAnsweredTasks maxScoreForAnsweredTasks learningGroupId sectionId topics { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount chapter { __typename id name order } } status topicScore } } }"#
       ))
 
     public var input: GetStudentDisciplineInput
@@ -129,6 +129,7 @@ extension LXPSchema {
               .field("isCheckPoint", Bool.self),
               .field("maxScore", Double?.self),
               .field("studyHoursCount", Double.self),
+              .field("chapter", Chapter.self),
             ] }
             static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
               GetStudentDisciplineQuery.Data.GetStudentDiscipline.Topic.Topic.self
@@ -140,6 +141,30 @@ extension LXPSchema {
             var isCheckPoint: Bool { __data["isCheckPoint"] }
             var maxScore: Double? { __data["maxScore"] }
             var studyHoursCount: Double { __data["studyHoursCount"] }
+            var chapter: Chapter { __data["chapter"] }
+
+            /// GetStudentDiscipline.Topic.Topic.Chapter
+            ///
+            /// Parent Type: `DisciplineChapter`
+            struct Chapter: LXPSchema.SelectionSet {
+              let __data: DataDict
+              init(_dataDict: DataDict) { __data = _dataDict }
+
+              static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.DisciplineChapter }
+              static var __selections: [ApolloAPI.Selection] { [
+                .field("__typename", String.self),
+                .field("id", LXPSchema.UUID.self),
+                .field("name", String.self),
+                .field("order", Double.self),
+              ] }
+              static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                GetStudentDisciplineQuery.Data.GetStudentDiscipline.Topic.Topic.Chapter.self
+              ] }
+
+              var id: LXPSchema.UUID { __data["id"] }
+              var name: String { __data["name"] }
+              var order: Double { __data["order"] }
+            }
           }
         }
       }

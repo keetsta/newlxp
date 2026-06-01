@@ -207,7 +207,10 @@ enum DisciplinesRepository {
                     status: progress,
                     score: t.topicScore,
                     maxScore: t.topic.maxScore,
-                    hours: t.topic.studyHoursCount
+                    hours: t.topic.studyHoursCount,
+                    chapterId: t.topic.chapter.id,
+                    chapterName: t.topic.chapter.name,
+                    chapterOrder: t.topic.chapter.order
                 )
             }
         return DisciplineDetail(

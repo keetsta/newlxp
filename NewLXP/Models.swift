@@ -133,6 +133,47 @@ struct Topic: Identifiable, Hashable, Codable {
     var score: Double? = nil
     var maxScore: Double? = nil
     var hours: Double = 0
+    /// Раздел дисциплины, к которому относится тема. ITHub группирует темы по
+    /// разделам в UI («Разделы и темы»). `nil` — если сервер не вернул главу
+    /// или это старый кэш.
+    var chapterId: String? = nil
+    var chapterName: String? = nil
+    var chapterOrder: Double? = nil
+
+    init(id: String = UUID().uuidString, number: String, title: String, isCheckpoint: Bool, status: TopicProgress = .notStarted, score: Double? = nil, maxScore: Double? = nil, hours: Double = 0, chapterId: String? = nil, chapterName: String? = nil, chapterOrder: Double? = nil) {
+        self.id = id
+        self.number = number
+        self.title = title
+        self.isCheckpoint = isCheckpoint
+        self.status = status
+        self.score = score
+        self.maxScore = maxScore
+        self.hours = hours
+        self.chapterId = chapterId
+        self.chapterName = chapterName
+        self.chapterOrder = chapterOrder
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, number, title, isCheckpoint, status, score, maxScore, hours
+        case chapterId, chapterName, chapterOrder
+    }
+
+    /// Кастомный декодер — поля раздела появились позже, в старом кэше их нет.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.number = try c.decode(String.self, forKey: .number)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.isCheckpoint = try c.decode(Bool.self, forKey: .isCheckpoint)
+        self.status = try c.decodeIfPresent(TopicProgress.self, forKey: .status) ?? .notStarted
+        self.score = try c.decodeIfPresent(Double.self, forKey: .score)
+        self.maxScore = try c.decodeIfPresent(Double.self, forKey: .maxScore)
+        self.hours = try c.decodeIfPresent(Double.self, forKey: .hours) ?? 0
+        self.chapterId = try c.decodeIfPresent(String.self, forKey: .chapterId)
+        self.chapterName = try c.decodeIfPresent(String.self, forKey: .chapterName)
+        self.chapterOrder = try c.decodeIfPresent(Double.self, forKey: .chapterOrder)
+    }
 }
 
 struct DisciplineDetail: Hashable, Codable {

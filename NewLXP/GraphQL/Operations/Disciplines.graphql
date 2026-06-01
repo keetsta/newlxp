@@ -38,6 +38,11 @@ query GetStudentDiscipline($input: GetStudentDisciplineInput!) {
         isCheckPoint
         maxScore
         studyHoursCount
+        chapter {
+          id
+          name
+          order
+        }
       }
       status
       topicScore

@@ -49,11 +49,16 @@ final class AppStore: ObservableObject {
         if let l = DiskCache.load(.lessonsByDay, as: [Date: [Lesson]].self) { self.lessonsByDay = l }
         if let r = DiskCache.load(.loadedRanges, as: [DateInterval].self) { self.loadedRanges = r }
         if let dd = DiskCache.load(.disciplineDetails, as: [String: DisciplineDetail].self) {
-            // Миграция: старый кэш не содержит scoreForAnsweredTasks. Если ни у
-            // одной детали этих полей нет (все нули), кэш считается устаревшим
-            // и сбрасывается — он молча перекачается с сервера в loadAllDisciplineDetails.
+            // Миграции старого кэша:
+            //  • до scoreForAnsweredTasks — `maxScoreForAnsweredTasks == 0` у всех
+            //  • до chapter в Topic — у тем нет `chapterName`
+            // В обоих случаях сбрасываем кэш, чтобы при следующем заходе в
+            // дисциплину он перекачался свежим.
             let hasScores = dd.values.contains { $0.maxScoreForAnsweredTasks > 0 }
-            if hasScores {
+            let hasChapters = dd.values.contains { d in
+                d.topics.contains { $0.chapterName?.isEmpty == false }
+            }
+            if hasScores && hasChapters {
                 self.disciplineDetails = dd
             } else {
                 DiskCache.save(.disciplineDetails, [String: DisciplineDetail]())

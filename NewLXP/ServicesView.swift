@@ -456,6 +456,8 @@ struct GradePill: View {
 struct DisciplineDetailView: View {
     @EnvironmentObject private var store: AppStore
     let discipline: Discipline
+    /// id раскрытых разделов. По умолчанию все свёрнуты.
+    @State private var expandedChapters: Set<String> = []
 
     private var detail: DisciplineDetail? { store.disciplineDetails[discipline.id] }
     private var attendance: AppStore.AttendanceMetric { store.attendanceFor(disciplineTitle: discipline.title) }
@@ -583,27 +585,63 @@ struct DisciplineDetailView: View {
         }
     }
 
+    /// Темы дисциплины, дедупнутые по `topicId` (сервер шлёт повторы через
+    /// разные learning paths) и сгруппированные по разделу. В каждой группе
+    /// темы отсортированы по номеру; группы — по `chapterOrder`. Темы без
+    /// раздела (старый кэш / нестандартный курс) сваливаются в «Без раздела».
+    struct ChapterGroup: Identifiable {
+        let id: String
+        let name: String
+        let order: Double
+        let topics: [Topic]
+    }
+
+    private var topicGroups: [ChapterGroup] {
+        guard let raw = detail?.topics, !raw.isEmpty else { return [] }
+        var byId: [String: Topic] = [:]
+        for t in raw {
+            if let ex = byId[t.id] {
+                if (t.score ?? 0) > (ex.score ?? 0) { byId[t.id] = t }
+            } else {
+                byId[t.id] = t
+            }
+        }
+        let unique = Array(byId.values)
+
+        let buckets = Dictionary(grouping: unique) { t in
+            t.chapterId ?? "__none__"
+        }
+        return buckets
+            .map { (cid, list) -> ChapterGroup in
+                let first = list.first
+                let name = (cid == "__none__") ? "Без раздела" : (first?.chapterName ?? "Раздел")
+                let order = first?.chapterOrder ?? .greatestFiniteMagnitude
+                let sorted = list.sorted {
+                    $0.number.compare($1.number, options: .numeric) == .orderedAscending
+                }
+                return ChapterGroup(id: cid, name: name, order: order, topics: sorted)
+            }
+            .sorted { lhs, rhs in
+                if lhs.id == "__none__" { return false }
+                if rhs.id == "__none__" { return true }
+                return lhs.order < rhs.order
+            }
+    }
+
     @ViewBuilder
     private var topicsSection: some View {
-        if let topics = detail?.topics, !topics.isEmpty {
+        let groups = topicGroups
+        if !groups.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Темы", trailing: "\(topics.count)")
-                VStack(spacing: 0) {
-                    ForEach(Array(topics.enumerated()), id: \.element.id) { index, topic in
-                        NavigationLink {
-                            TopicDetailView(topicId: topic.id, fallbackTitle: topic.title)
-                        } label: {
-                            TopicRow(topic: topic)
-                        }
-                        .buttonStyle(.plain)
-                        if index < topics.count - 1 {
-                            Divider().padding(.leading, 56).opacity(0.4)
-                        }
+                SectionHeader(title: "Разделы и темы",
+                              trailing: "\(groups.reduce(0) { $0 + $1.topics.count })")
+                VStack(spacing: 12) {
+                    ForEach(groups) { group in
+                        ChapterCard(group: group, expanded: chapterExpansion(for: group))
                     }
                 }
-                .lxpGlass(cornerRadius: 22)
             }
-        } else {
+        } else if detail == nil {
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Загружаем темы…").font(.footnote).foregroundStyle(.secondary)
@@ -611,6 +649,87 @@ struct DisciplineDetailView: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 18)
         }
+    }
+
+    /// Управление сворачиванием раздела: ключ хранится в `@State expanded`
+    /// родительского view (см. ниже).
+    private func chapterExpansion(for group: ChapterGroup) -> Binding<Bool> {
+        Binding(
+            get: { expandedChapters.contains(group.id) },
+            set: { isOpen in
+                if isOpen { expandedChapters.insert(group.id) }
+                else { expandedChapters.remove(group.id) }
+            }
+        )
+    }
+}
+
+/// Свёртываемая карточка раздела дисциплины («Разделы и темы» на сайте ITHub).
+/// Заголовок показывает название раздела + сводку «N тем · M из K сдано»
+/// + chevron. По тапу разворачивает список тем.
+private struct ChapterCard: View {
+    let group: DisciplineDetailView.ChapterGroup
+    @Binding var expanded: Bool
+
+    private var passedCount: Int {
+        group.topics.filter { $0.status == .passed }.count
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    expanded.toggle()
+                }
+            } label: {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(group.name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 6) {
+                            Text("\(group.topics.count) \(RussianPlural.form(group.topics.count, one: "тема", few: "темы", many: "тем"))")
+                            if passedCount > 0 {
+                                Text("·").foregroundStyle(.tertiary)
+                                Text("\(passedCount) сдано")
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Divider().opacity(0.4).padding(.leading, 16)
+                VStack(spacing: 0) {
+                    ForEach(Array(group.topics.enumerated()), id: \.element.id) { index, topic in
+                        NavigationLink {
+                            TopicDetailView(topicId: topic.id, fallbackTitle: topic.title)
+                        } label: {
+                            TopicRow(topic: topic)
+                        }
+                        .buttonStyle(.plain)
+                        if index < group.topics.count - 1 {
+                            Divider().padding(.leading, 56).opacity(0.4)
+                        }
+                    }
+                }
+                .padding(.bottom, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .lxpGlass(cornerRadius: 22)
     }
 }
 
@@ -782,8 +901,13 @@ struct DiaryView: View {
                 byId[t.id] = t
             }
         }
-        return Array(byId.values).sorted {
-            $0.number.compare($1.number, options: .numeric) == .orderedAscending
+        // Сначала по `chapterOrder` (раздел), потом по номеру темы.
+        // Темы без раздела уезжают в конец.
+        return Array(byId.values).sorted { a, b in
+            let ao = a.chapterOrder ?? .greatestFiniteMagnitude
+            let bo = b.chapterOrder ?? .greatestFiniteMagnitude
+            if ao != bo { return ao < bo }
+            return a.number.compare(b.number, options: .numeric) == .orderedAscending
         }
     }
 
@@ -856,7 +980,7 @@ struct DiaryView: View {
             }
             .buttonStyle(.plain)
 
-            // Список оценённых тем.
+            // Список оценённых тем, сгруппированных по разделу дисциплины.
             VStack(spacing: 0) {
                 if graded.isEmpty {
                     Text("Пока нет выставленных оценок")
@@ -866,15 +990,32 @@ struct DiaryView: View {
                         .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, topic in
-                        NavigationLink {
-                            TopicDetailView(topicId: topic.id, fallbackTitle: topic.title)
-                        } label: {
-                            GradeRow(topic: topic)
-                        }
-                        .buttonStyle(.plain)
-                        if index < visible.count - 1 {
+                    let chapters = chapterGroups(for: visible)
+                    ForEach(Array(chapters.enumerated()), id: \.element.id) { chIndex, ch in
+                        if chIndex > 0 {
                             Divider().padding(.leading, 16).opacity(0.4)
+                        }
+                        if !ch.name.isEmpty {
+                            Text(ch.name)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .tracking(0.4)
+                                .textCase(.uppercase)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+                                .padding(.bottom, 4)
+                        }
+                        ForEach(Array(ch.topics.enumerated()), id: \.element.id) { tIndex, topic in
+                            NavigationLink {
+                                TopicDetailView(topicId: topic.id, fallbackTitle: topic.title)
+                            } label: {
+                                GradeRow(topic: topic)
+                            }
+                            .buttonStyle(.plain)
+                            if tIndex < ch.topics.count - 1 {
+                                Divider().padding(.leading, 16).opacity(0.4)
+                            }
                         }
                     }
                     if graded.count > collapsedLimit {
@@ -904,6 +1045,24 @@ struct DiaryView: View {
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity)
         .lxpGlass(cornerRadius: 22)
+    }
+
+    /// Лёгкая группировка списка оценённых тем по разделу — без сворачивания
+    /// (всё видно как один свиток в карточке дисциплины). Сохраняет порядок
+    /// тем, заданный `gradedTopics`.
+    private func chapterGroups(for topics: [Topic]) -> [(id: String, name: String, topics: [Topic])] {
+        var order: [String] = []
+        var byKey: [String: (name: String, topics: [Topic])] = [:]
+        for t in topics {
+            let key = t.chapterId ?? "__none__"
+            let name = t.chapterName ?? ""
+            if byKey[key] == nil {
+                order.append(key)
+                byKey[key] = (name: name, topics: [])
+            }
+            byKey[key]?.topics.append(t)
+        }
+        return order.map { (id: $0, name: byKey[$0]?.name ?? "", topics: byKey[$0]?.topics ?? []) }
     }
 
     private func gradeColor(for grade: Int?) -> Color {
