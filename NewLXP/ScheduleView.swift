@@ -559,7 +559,7 @@ struct TopicDetailView: View {
             SectionHeader(title: "Содержание", trailing: "\(list.count)")
             VStack(spacing: 10) {
                 ForEach(list) { block in
-                    TopicContentBlockCard(block: block)
+                    TopicContentBlockCard(block: block, topicId: topicId)
                 }
             }
         }
@@ -572,7 +572,19 @@ struct TopicDetailView: View {
 }
 
 struct TopicContentBlockCard: View {
+    @EnvironmentObject private var store: AppStore
     let block: TopicContentBlock
+    let topicId: String
+
+    /// Для блока задания/КТ показываем секцию «Мой ответ» с переходом на
+    /// экран отправки.
+    private var canSubmitAnswer: Bool {
+        block.kind == .task || block.kind == .test
+    }
+
+    private var answers: [StudentTaskAnswer] {
+        store.answersByBlock[block.id] ?? []
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -603,10 +615,62 @@ struct TopicContentBlockCard: View {
                 .font(.caption)
                 .foregroundStyle(dl < Date() ? .red : .secondary)
             }
+            if canSubmitAnswer {
+                Divider().opacity(0.4).padding(.top, 2)
+                NavigationLink {
+                    AnswerView(topicId: topicId, block: block)
+                } label: {
+                    answerRowLabel
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .lxpGlass(cornerRadius: 20)
+        .task(id: block.id) {
+            // Подгружаем ответы лениво — только когда карточка реально оказалась
+            // на экране, чтобы не дёргать сеть для всех блоков темы сразу.
+            if canSubmitAnswer && store.answersByBlock[block.id] == nil {
+                await store.loadAnswers(topicId: topicId, contentBlockId: block.id)
+            }
+        }
+    }
+
+    private var answerRowLabel: some View {
+        HStack(spacing: 12) {
+            Image(systemName: answers.isEmpty ? "square.and.pencil" : "paperplane.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(answers.isEmpty ? Color.secondary : Color.green)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(answers.isEmpty ? "Прикрепить ответ" : "Мой ответ")
+                    .font(.subheadline.weight(.semibold))
+                Text(answerSubtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+
+    private var answerSubtitle: String {
+        if answers.isEmpty {
+            if block.deadline != nil {
+                return block.kind == .test ? "Загрузить ответ на КТ" : "Текст и/или файлы"
+            }
+            return "Текст и/или файлы"
+        }
+        let files = answers.flatMap(\.filesUrls).count
+        if files > 0 {
+            return "Отправлено \(answers.count) · файлов \(files)"
+        }
+        return "Отправлено: \(answers.count)"
     }
 
     @ViewBuilder

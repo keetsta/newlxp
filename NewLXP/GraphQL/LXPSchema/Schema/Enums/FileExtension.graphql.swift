@@ -1,0 +1,58 @@
+// @generated
+// This file was automatically generated and should not be edited.
+
+@_spi(Internal) import ApolloAPI
+
+extension LXPSchema {
+  enum FileExtension: String, EnumType {
+    case avi = "AVI"
+    case blend = "BLEND"
+    case bmp = "BMP"
+    case cfg = "CFG"
+    case conf = "CONF"
+    case css = "CSS"
+    case doc = "DOC"
+    case docx = "DOCX"
+    case dtd = "DTD"
+    case fbx = "FBX"
+    case gif = "GIF"
+    case htaccess = "HTACCESS"
+    case html = "HTML"
+    case inc = "INC"
+    case ini = "INI"
+    case jpeg = "JPEG"
+    case js = "JS"
+    case json = "JSON"
+    case mp4 = "MP4"
+    case mpeg = "MPEG"
+    case obj = "OBJ"
+    case odp = "ODP"
+    case odt = "ODT"
+    case ott = "OTT"
+    case pdf = "PDF"
+    case png = "PNG"
+    case ppt = "PPT"
+    case pptx = "PPTX"
+    case pur = "PUR"
+    case py = "PY"
+    case rar = "RAR"
+    case sevenZ = "SEVEN_Z"
+    case spp = "SPP"
+    case svg = "SVG"
+    case tar = "TAR"
+    case tiff = "TIFF"
+    case tmp = "TMP"
+    case tpl = "TPL"
+    case txt = "TXT"
+    case wav = "WAV"
+    case xls = "XLS"
+    case xlsx = "XLSX"
+    case xml = "XML"
+    case xsd = "XSD"
+    case xsl = "XSL"
+    case yaml = "YAML"
+    case zbr = "ZBR"
+    case zip = "ZIP"
+  }
+
+}

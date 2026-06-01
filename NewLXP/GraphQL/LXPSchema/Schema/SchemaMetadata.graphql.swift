@@ -37,9 +37,11 @@ extension LXPSchema {
       case "DisciplineChapter": return LXPSchema.Objects.DisciplineChapter
       case "DisciplineTopic": return LXPSchema.Objects.DisciplineTopic
       case "DisciplineTopicContent": return LXPSchema.Objects.DisciplineTopicContent
+      case "GetFileUploadUrlPayload": return LXPSchema.Objects.GetFileUploadUrlPayload
       case "GetStudentTopicPayload": return LXPSchema.Objects.GetStudentTopicPayload
       case "InfoDisciplineTopicContentBlock": return LXPSchema.Objects.InfoDisciplineTopicContentBlock
       case "LearningGroup": return LXPSchema.Objects.LearningGroup
+      case "Mutation": return LXPSchema.Objects.Mutation
       case "Query": return LXPSchema.Objects.Query
       case "RefreshTokenPayload": return LXPSchema.Objects.RefreshTokenPayload
       case "SignInPayload": return LXPSchema.Objects.SignInPayload
@@ -54,6 +56,9 @@ extension LXPSchema {
       case "StudentSuborganization": return LXPSchema.Objects.StudentSuborganization
       case "StudentTopic": return LXPSchema.Objects.StudentTopic
       case "Suborganization": return LXPSchema.Objects.Suborganization
+      case "Task": return LXPSchema.Objects.Task
+      case "TaskAnswer": return LXPSchema.Objects.TaskAnswer
+      case "TaskAnswerComment": return LXPSchema.Objects.TaskAnswerComment
       case "TaskDisciplineTopicContentBlock": return LXPSchema.Objects.TaskDisciplineTopicContentBlock
       case "Teacher": return LXPSchema.Objects.Teacher
       case "TestDisciplineTopicContentBlock": return LXPSchema.Objects.TestDisciplineTopicContentBlock

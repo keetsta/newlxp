@@ -332,3 +332,22 @@ struct Profile: Hashable, Codable {
     let learningGroupId: String?
     let groupMates: [GroupMate]
 }
+
+// MARK: - Task answers
+
+/// Один отправленный студентом ответ на блок задания (kind=.task) или КТ (kind=.test).
+/// `id` приходит от сервера, нужен для редактирования/удаления.
+///
+/// `text` — то, что юзер набрал текстом в поле «Ответ».
+/// `content` — расширенный rich-text (Editor.js JSON либо HTML), создаётся
+/// веб-клиентом ITHub при использовании встроенного редактора (он умеет
+/// inline-вставку картинок). На iOS мы пишем только в `text`, но для
+/// просмотра ответов с сайта надо отрисовать `content`.
+struct StudentTaskAnswer: Identifiable, Hashable {
+    let id: String
+    let text: String
+    let content: String?
+    let filesUrls: [String]
+    let createdAt: Date
+    let isEdited: Bool
+}

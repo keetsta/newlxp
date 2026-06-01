@@ -100,6 +100,17 @@ enum LXPError: LocalizedError {
         case .unknown: "Неизвестная ошибка"
         }
     }
+
+    /// Эта ошибка — отмена задачи (выход с экрана), а не сетевая проблема.
+    /// Такие ошибки НЕ показываем юзеру через ErrorBanner.
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let url = error as? URLError, url.code == .cancelled { return true }
+        // LXPError.server со строкой Apollo-а про cancelled
+        let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let lower = msg.lowercased()
+        return lower.contains("cancelled") || lower.contains("canceled") || lower.contains("отменен")
+    }
 }
 
 extension ApolloClient {
@@ -149,6 +160,34 @@ extension ApolloClient {
             || lower.contains("unauthorized")
             || lower.contains("token expired")
             || lower.contains("jwt expired")
+    }
+
+    // MARK: - Mutations
+
+    func performData<M: GraphQLMutation>(_ mutation: M) async throws -> M.Data
+    where M.ResponseFormat == SingleResponseFormat {
+        try await performData(mutation, allowRefresh: true)
+    }
+
+    private func performData<M: GraphQLMutation>(_ mutation: M, allowRefresh: Bool) async throws -> M.Data
+    where M.ResponseFormat == SingleResponseFormat {
+        do {
+            let response: GraphQLResponse<M> = try await self.perform(mutation: mutation)
+            if let errors = response.errors, !errors.isEmpty {
+                let msg = errors.compactMap { $0.message }.joined(separator: "; ")
+                if allowRefresh, isExpiredSessionMessage(msg) {
+                    if try await refreshAccessToken() {
+                        return try await performData(mutation, allowRefresh: false)
+                    }
+                }
+                throw LXPError.server(msg.isEmpty ? "GraphQL error" : msg)
+            }
+            guard let data = response.data else { throw LXPError.decoding }
+            return data
+        } catch let urlError as URLError {
+            LXPLog.debug("[LXP] mutation URLError code=\(urlError.code.rawValue) desc=\(urlError.localizedDescription)")
+            throw LXPError.server("\(urlError.localizedDescription) (code \(urlError.code.rawValue))")
+        }
     }
 }
 

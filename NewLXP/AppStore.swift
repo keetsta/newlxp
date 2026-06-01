@@ -18,6 +18,9 @@ final class AppStore: ObservableObject {
     @Published var lessonsByDay: [Date: [Lesson]] = [:]
     @Published var loadedRanges: [DateInterval] = []
     @Published var isScheduleLoading: Bool = false
+    /// Идущие сейчас загрузки расписания — чтобы parallel `loadSchedule` за тот же
+    /// диапазон ждали один сетевой запрос вместо дублирования.
+    private var inflightSchedule: [DateInterval: Task<Void, Never>] = [:]
 
     // Disciplines
     @Published var disciplines: [Discipline] = MockData.disciplines
@@ -26,6 +29,9 @@ final class AppStore: ObservableObject {
 
     // Assignments
     @Published var assignments: [Assignment] = MockData.assignments
+
+    /// Ответы студента по блоку задания/КТ. Ключ — `contentBlockId`.
+    @Published var answersByBlock: [String: [StudentTaskAnswer]] = [:]
 
     // Last load error to surface in UI / debug
     @Published var lastError: String?
@@ -355,6 +361,14 @@ final class AppStore: ObservableObject {
         let from = cal.date(byAdding: .day, value: -30, to: cal.startOfDay(for: Date()))!
         let to = cal.date(byAdding: .day, value: 21, to: cal.startOfDay(for: Date()))!
 
+        // На каждом старте сбрасываем «уже загруженные» диапазоны — иначе
+        // отметки посещаемости, выставленные после прошлой загрузки, не
+        // подтягиваются (ScheduleView показывает старые статусы из кэша).
+        // Сами уроки в `lessonsByDay` остаются для тёплого старта; новый
+        // ответ сервера их перезапишет.
+        self.loadedRanges = []
+        DiskCache.save(.loadedRanges, self.loadedRanges)
+
         // Если studentId уже известен (из прошлого запуска), запускаем всё параллельно
         // включая профиль — не блокируем дисциплины ожиданием профиля.
         if let studentId = TokenStore.studentId, !studentId.isEmpty {
@@ -391,7 +405,9 @@ final class AppStore: ObservableObject {
             DiskCache.save(.profile, me.profile)
             LXPLog.debug("[LXP] loadProfile OK studentId=\(me.studentId ?? "nil") mates=\(me.profile.groupMates.count)")
         } catch {
-            self.lastError = error.localizedDescription
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
             LXPLog.debug("[LXP] loadProfile FAIL \(error)")
         }
     }
@@ -401,31 +417,45 @@ final class AppStore: ObservableObject {
         if loadedRanges.contains(where: { $0.start <= interval.start && $0.end >= interval.end }) {
             return
         }
-        isScheduleLoading = true
-        defer { isScheduleLoading = false }
-        do {
-            let lessons = try await ScheduleRepository.lessons(studentId: studentId, from: from, to: to)
-            var bucket = self.lessonsByDay
-            let cal = Calendar.current
-            var day = cal.startOfDay(for: from)
-            let endDay = cal.startOfDay(for: to)
-            while day <= endDay {
-                bucket[day] = []
-                day = cal.date(byAdding: .day, value: 1, to: day)!
-            }
-            for l in lessons {
-                let d = cal.startOfDay(for: l.start)
-                bucket[d, default: []].append(l)
-            }
-            self.lessonsByDay = bucket
-            self.loadedRanges.append(interval)
-            DiskCache.save(.lessonsByDay, self.lessonsByDay)
-            DiskCache.save(.loadedRanges, self.loadedRanges)
-            LXPLog.debug("[LXP] loadSchedule OK \(lessons.count) lessons in \(from)..\(to)")
-        } catch {
-            self.lastError = error.localizedDescription
-            LXPLog.debug("[LXP] loadSchedule FAIL \(error)")
+        // Если запрос за тот же интервал уже идёт — переиспользуем его, а не
+        // дёргаем сеть второй раз. Иначе при холодном старте `refreshAll` и
+        // `ScheduleView.task` могут одновременно стартовать одинаковые загрузки.
+        if let task = inflightSchedule[interval] {
+            await task.value
+            return
         }
+        isScheduleLoading = true
+        let task = Task<Void, Never> {
+            do {
+                let lessons = try await ScheduleRepository.lessons(studentId: studentId, from: from, to: to)
+                var bucket = self.lessonsByDay
+                let cal = Calendar.current
+                var day = cal.startOfDay(for: from)
+                let endDay = cal.startOfDay(for: to)
+                while day <= endDay {
+                    bucket[day] = []
+                    day = cal.date(byAdding: .day, value: 1, to: day)!
+                }
+                for l in lessons {
+                    let d = cal.startOfDay(for: l.start)
+                    bucket[d, default: []].append(l)
+                }
+                self.lessonsByDay = bucket
+                self.loadedRanges.append(interval)
+                DiskCache.save(.lessonsByDay, self.lessonsByDay)
+                DiskCache.save(.loadedRanges, self.loadedRanges)
+                LXPLog.debug("[LXP] loadSchedule OK \(lessons.count) lessons in \(from)..\(to)")
+            } catch {
+                if !LXPError.isCancellation(error) {
+                    self.lastError = error.localizedDescription
+                }
+                LXPLog.debug("[LXP] loadSchedule FAIL \(error)")
+            }
+        }
+        inflightSchedule[interval] = task
+        await task.value
+        inflightSchedule[interval] = nil
+        isScheduleLoading = !inflightSchedule.isEmpty
     }
 
     func ensureScheduleAround(_ date: Date) async {
@@ -445,23 +475,37 @@ final class AppStore: ObservableObject {
         await loadSchedule(studentId: studentId, from: from, to: to)
     }
 
-    /// Активные дисциплины — те, у которых в загруженном расписании есть
-    /// **3 и более пар**. Сервер `studentDisciplinesThroughClassesWithPagination`
-    /// возвращает все записи, к которым студент когда-либо был привязан, в т.ч.
-    /// артефакты вроде разовой замены (например, «Английский A2», у которого
-    /// в окне всего 1 пара 26 мая — реальный курс это «Английский B1» с 30
-    /// парами). Порог 3 надёжно отсекает такие single-shot записи, не задевая
-    /// курсы текущего семестра, у которых пары уже закончились (минимум 5-8 пар).
-    /// Фолбэк на полный список — если расписание ещё не подгрузилось.
+    /// Активные дисциплины. Сервер `studentDisciplinesThroughClassesWithPagination`
+    /// возвращает всё, к чему студент когда-либо был привязан, в т.ч. архивы
+    /// прошлых семестров (без `archivedAt`) и разовые замены, у которых в окне
+    /// всего 1-2 пары (классика — «Английский A2», у которого 1 пара 26 мая,
+    /// а реальный курс — «Английский B1»).
+    ///
+    /// Считаем дисциплину активной если:
+    ///  • у неё есть будущая пара (включая сегодня), ИЛИ
+    ///  • у неё ≥3 пар за последние 30 дней.
+    /// Первый критерий ловит курсы текущего семестра, второй — те, что
+    /// только что завершились (последние пары уже прошли, но баллы свежие).
+    /// Однопарные «замены» отсекаются по второму, а курсы прошлого семестра —
+    /// и по первому, и по второму. Фолбэк на полный список — пока расписание
+    /// не подгрузилось.
     var activeDisciplines: [Discipline] {
-        var counts: [String: Int] = [:]
+        guard !lessonsByDay.isEmpty else { return disciplines }
+        let cal = Calendar.current
+        let now = Date()
+        let today = cal.startOfDay(for: now)
+        let monthAgo = cal.date(byAdding: .day, value: -30, to: today) ?? Date.distantPast
+        var hasFuture: Set<String> = []
+        var recentCounts: [String: Int] = [:]
         for (_, lessons) in lessonsByDay {
             for l in lessons {
-                counts[l.discipline, default: 0] += 1
+                if l.start >= today { hasFuture.insert(l.discipline) }
+                if l.start >= monthAgo { recentCounts[l.discipline, default: 0] += 1 }
             }
         }
-        guard !counts.isEmpty else { return disciplines }
-        return disciplines.filter { (counts[$0.title] ?? 0) >= 3 }
+        return disciplines.filter { d in
+            hasFuture.contains(d.title) || (recentCounts[d.title] ?? 0) >= 3
+        }
     }
 
     func loadDisciplines(studentId: String) async {
@@ -491,7 +535,9 @@ final class AppStore: ObservableObject {
             DiskCache.save(.disciplines, self.disciplines)
             LXPLog.debug("[LXP] loadDisciplines OK \(list.count) raw → \(self.disciplines.count) unique")
         } catch {
-            self.lastError = error.localizedDescription
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
             LXPLog.debug("[LXP] loadDisciplines FAIL \(error)")
         }
     }
@@ -504,7 +550,9 @@ final class AppStore: ObservableObject {
             DiskCache.save(.disciplineDetails, self.disciplineDetails)
             LXPLog.debug("[LXP] loadDisciplineDetail OK \(disciplineId) topics=\(d.topics.count)")
         } catch {
-            self.lastError = error.localizedDescription
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
             LXPLog.debug("[LXP] loadDisciplineDetail FAIL \(error)")
         }
     }
@@ -532,7 +580,9 @@ final class AppStore: ObservableObject {
             DiskCache.save(.topicDetails, self.topicDetails)
             LXPLog.debug("[LXP] loadTopicDetail OK \(topicId) blocks=\(t.blocks.count)")
         } catch {
-            self.lastError = error.localizedDescription
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
             LXPLog.debug("[LXP] loadTopicDetail FAIL \(error)")
         }
     }
@@ -544,7 +594,9 @@ final class AppStore: ObservableObject {
             DiskCache.save(.assignments, list)
             LXPLog.debug("[LXP] loadAssignments OK \(list.count)")
         } catch {
-            self.lastError = error.localizedDescription
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
             LXPLog.debug("[LXP] loadAssignments FAIL \(error)")
         }
     }
@@ -580,6 +632,64 @@ final class AppStore: ObservableObject {
         disciplineDetails = [:]
         topicDetails = [:]
         assignments = MockData.assignments
+        answersByBlock = [:]
         lastError = nil
+    }
+
+    // MARK: - Task answers
+
+    func loadAnswers(topicId: String, contentBlockId: String) async {
+        guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return }
+        do {
+            let list = try await AnswersRepository.fetchAnswers(studentId: studentId, topicId: topicId, contentBlockId: contentBlockId)
+            self.answersByBlock[contentBlockId] = list
+            let allUrls = list.flatMap(\.filesUrls)
+            LXPLog.debug("[LXP] loadAnswers OK \(contentBlockId) count=\(list.count) files=\(allUrls.count) urls=\(allUrls)")
+        } catch {
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
+            LXPLog.debug("[LXP] loadAnswers FAIL \(error)")
+        }
+    }
+
+    func submitAnswer(topicId: String, contentBlockId: String, text: String, filesUrl: [String]) async -> Bool {
+        do {
+            LXPLog.debug("[LXP] submitAnswer → \(contentBlockId) text=\(text.count)ch files=\(filesUrl.count) urls=\(filesUrl)")
+            let new = try await AnswersRepository.createAnswer(
+                topicId: topicId, contentBlockId: contentBlockId,
+                text: text, filesUrl: filesUrl
+            )
+            LXPLog.debug("[LXP] submitAnswer ← id=\(new.id) text=\(new.text.count)ch files=\(new.filesUrls.count) urls=\(new.filesUrls)")
+            // На случай, если мутация вернула неполный список (бэк-баг) —
+            // перезапросим список ответов с сервера.
+            await self.loadAnswers(topicId: topicId, contentBlockId: contentBlockId)
+            return true
+        } catch {
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
+            LXPLog.debug("[LXP] submitAnswer FAIL \(error)")
+            return false
+        }
+    }
+
+    func deleteAnswer(answerId: String, topicId: String, contentBlockId: String) async -> Bool {
+        guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return false }
+        do {
+            try await AnswersRepository.deleteAnswer(
+                answerId: answerId, studentId: studentId,
+                topicId: topicId, contentBlockId: contentBlockId
+            )
+            self.answersByBlock[contentBlockId]?.removeAll { $0.id == answerId }
+            LXPLog.debug("[LXP] deleteAnswer OK \(answerId)")
+            return true
+        } catch {
+            if !LXPError.isCancellation(error) {
+                self.lastError = error.localizedDescription
+            }
+            LXPLog.debug("[LXP] deleteAnswer FAIL \(error)")
+            return false
+        }
     }
 }

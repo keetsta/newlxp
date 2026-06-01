@@ -331,3 +331,103 @@ enum TasksRepository {
         }
     }
 }
+
+// MARK: - Answers / file uploads
+
+enum AnswersRepository {
+    /// Загружает уже отправленные студентом ответы для блока задания.
+    /// `getStudentTask_v2` создаёт связку студент↔блок при первом обращении,
+    /// поэтому даже если ответов нет — вызов не падает.
+    static func fetchAnswers(studentId: String, topicId: String, contentBlockId: String) async throws -> [StudentTaskAnswer] {
+        let input = LXPSchema.GetStudentTaskInput(
+            contentBlockId: contentBlockId,
+            studentId: studentId,
+            topicId: topicId
+        )
+        let data = try await LXP.apollo.fetchData(LXPSchema.GetStudentTaskQuery(input: input))
+        guard let task = data.getStudentTask_v2 else { return [] }
+        return task.studentAnswers
+            .map { a in
+                StudentTaskAnswer(
+                    id: a.id,
+                    text: a.text,
+                    content: a.content,
+                    filesUrls: a.filesUrls,
+                    createdAt: LXPMapping.date(a.createdAt) ?? Date(),
+                    isEdited: a.isEdited
+                )
+            }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    /// Создаёт новый ответ. `text` обязателен (бэк требует non-null), `filesUrl` —
+    /// уже загруженные через presigned PUT URL'ы файлов.
+    static func createAnswer(topicId: String, contentBlockId: String, text: String, filesUrl: [String]) async throws -> StudentTaskAnswer {
+        let input = LXPSchema.CreateAnswerInput(
+            contentBlockId: contentBlockId,
+            filesUrl: filesUrl,
+            text: text,
+            topicId: topicId
+        )
+        let data = try await LXP.apollo.performData(LXPSchema.CreateAnswerMutation(input: input))
+        let a = data.createAnswer
+        return StudentTaskAnswer(
+            id: a.id,
+            text: a.text,
+            content: a.content,
+            filesUrls: a.filesUrls,
+            createdAt: LXPMapping.date(a.createdAt) ?? Date(),
+            isEdited: false
+        )
+    }
+
+    /// Удаляет ранее отправленный ответ. После — нужно перезапросить список.
+    static func deleteAnswer(answerId: String, studentId: String, topicId: String, contentBlockId: String) async throws {
+        let input = LXPSchema.DeleteAnswerInputV2(
+            answerId: answerId,
+            contentBlockId: contentBlockId,
+            studentId: studentId,
+            topicId: topicId
+        )
+        _ = try await LXP.apollo.performData(LXPSchema.DeleteAnswerV2Mutation(input: input))
+    }
+}
+
+enum UploadRepository {
+    /// Получает временный (presigned) PUT URL у бэка. Загрузка идёт прямо
+    /// в S3 — мимо нашего GraphQL.
+    static func presignedUrl(fileName: String, fileExtension: String) async throws -> URL {
+        let input = LXPSchema.GetFileUploadUrlInput(
+            fileExtensionV2: .some(fileExtension),
+            fileName: .some(fileName)
+        )
+        let data = try await LXP.apollo.fetchData(LXPSchema.GetFileUploadUrlQuery(input: input))
+        guard let url = URL(string: data.getFileUploadUrl.url) else {
+            throw LXPError.server("Некорректный URL загрузки")
+        }
+        return url
+    }
+
+    /// Аплоадит data PUT-ом и возвращает «постоянную» URL без query-параметров,
+    /// которую и хранит бэк в `filesUrls`.
+    static func uploadFile(data: Data, fileName: String, fileExtension: String, mimeType: String) async throws -> String {
+        let putURL = try await presignedUrl(fileName: fileName, fileExtension: fileExtension)
+        LXPLog.debug("[LXP][upload] presigned host=\(putURL.host ?? "?") path=\(putURL.path)")
+        var req = URLRequest(url: putURL)
+        req.httpMethod = "PUT"
+        req.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        let (_, resp) = try await URLSession.shared.upload(for: req, from: data)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        guard let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            LXPLog.debug("[LXP][upload] PUT failed code=\(code)")
+            throw LXPError.server("Не удалось загрузить файл (код \(code))")
+        }
+        // Бэк сохраняет ссылку без presigned-параметров — обрезаем query.
+        var comps = URLComponents(url: putURL, resolvingAgainstBaseURL: false)
+        comps?.query = nil
+        comps?.fragment = nil
+        let publicUrl = comps?.url?.absoluteString ?? putURL.absoluteString
+        LXPLog.debug("[LXP][upload] OK \(publicUrl)")
+        return publicUrl
+    }
+}

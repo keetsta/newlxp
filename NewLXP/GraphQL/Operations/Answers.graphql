@@ -1,0 +1,62 @@
+query GetStudentTask($input: GetStudentTaskInput!) {
+  getStudentTask_v2(input: $input) {
+    id
+    contentBlockId
+    topicId
+    studentId
+    scoreInPercent
+    studentAnswers {
+      id
+      text
+      content
+      filesUrls
+      createdAt
+      isEdited
+      taskId
+      studentId
+      comments {
+        id
+        text
+        filesUrls
+        createdAt
+        authorId
+        isEdited
+      }
+    }
+  }
+}
+
+query GetFileUploadUrl($input: GetFileUploadUrlInput!) {
+  getFileUploadUrl(input: $input) {
+    url
+  }
+}
+
+mutation CreateAnswer($input: CreateAnswerInput!) {
+  createAnswer(input: $input) {
+    id
+    text
+    content
+    filesUrls
+    createdAt
+    taskId
+    studentId
+  }
+}
+
+mutation EditAnswerV2($input: EditAnswerInputV2!) {
+  editAnswerV2(input: $input) {
+    id
+    text
+    content
+    filesUrls
+    createdAt
+    isEdited
+    taskId
+    studentId
+  }
+}
+
+mutation DeleteAnswerV2($input: DeleteAnswerInputV2!) {
+  deleteAnswerV2(input: $input)
+}
