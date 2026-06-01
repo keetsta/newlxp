@@ -776,9 +776,6 @@ struct DiaryView: View {
                         if let g = s.score?.grade {
                             GradePill(grade: g)
                         }
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
                     }
                     if let score = s.score, score.assigned > 0 {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -952,6 +949,8 @@ struct AttendanceOverviewView: View {
     @EnvironmentObject private var store: AppStore
     @State private var range: Range = .week
     @State private var legendExpanded: Bool = false
+    /// 0 — текущая неделя/месяц, -1 — прошлая, и т.д.
+    @State private var periodOffset: Int = 0
 
     enum Range: String, CaseIterable, Identifiable {
         case week = "Неделя"
@@ -959,22 +958,66 @@ struct AttendanceOverviewView: View {
         var id: String { rawValue }
     }
 
-    /// Календарный интервал: текущая неделя (пн → сейчас) или текущий месяц (1-е → сейчас).
-    /// До первой пары недели/месяца окно может быть пустым — это нормально.
+    /// Календарный интервал текущего выбранного периода с учётом `periodOffset`.
+    /// `offset=0` — текущая неделя/месяц (правый край = сейчас).
+    /// `offset<0` — прошлый, окно полное.
     private var rangeInterval: ClosedRange<Date> {
         let now = Date()
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2 // Monday
         switch range {
         case .week:
-            var cal = Calendar(identifier: .gregorian)
-            cal.firstWeekday = 2 // Monday
-            let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-            let start = cal.date(from: comps)!
-            return start...now
+            let thisWeekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+            let start = cal.date(byAdding: .weekOfYear, value: periodOffset, to: thisWeekStart)!
+            let endExclusive = cal.date(byAdding: .day, value: 7, to: start)!
+            // Если это текущая неделя — обрезаем по «сейчас», чтобы не считать
+            // ещё не прошедшие пары.
+            let upper = min(endExclusive, now)
+            guard upper >= start else { return start...start }
+            return start...upper
         case .month:
-            let cal = Calendar.current
-            let comps = cal.dateComponents([.year, .month], from: now)
-            let start = cal.date(from: comps)!
-            return start...now
+            let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+            let start = cal.date(byAdding: .month, value: periodOffset, to: thisMonthStart)!
+            let endExclusive = cal.date(byAdding: .month, value: 1, to: start)!
+            let upper = min(endExclusive, now)
+            guard upper >= start else { return start...start }
+            return start...upper
+        }
+    }
+
+    /// Дальше в будущее листать нельзя — нет смысла смотреть ещё не прошедший период.
+    private var canGoForward: Bool { periodOffset < 0 }
+
+    /// Заголовок периода для подписи между стрелками.
+    private var periodTitle: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "ru_RU")
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        switch range {
+        case .week:
+            if periodOffset == 0 { return "Эта неделя" }
+            if periodOffset == -1 { return "Прошлая неделя" }
+            let now = Date()
+            let thisWeekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+            let start = cal.date(byAdding: .weekOfYear, value: periodOffset, to: thisWeekStart)!
+            let end = cal.date(byAdding: .day, value: 6, to: start)!
+            if cal.component(.month, from: start) == cal.component(.month, from: end) {
+                f.dateFormat = "d"
+                let s = f.string(from: start)
+                f.dateFormat = "d MMMM"
+                return "\(s)–\(f.string(from: end))"
+            }
+            f.dateFormat = "d MMM"
+            return "\(f.string(from: start)) – \(f.string(from: end))"
+        case .month:
+            if periodOffset == 0 { return "Этот месяц" }
+            if periodOffset == -1 { return "Прошлый месяц" }
+            let now = Date()
+            let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: now))!
+            let start = cal.date(byAdding: .month, value: periodOffset, to: thisMonthStart)!
+            f.dateFormat = "LLLL yyyy"
+            return f.string(from: start).capitalized
         }
     }
 
@@ -993,6 +1036,7 @@ struct AttendanceOverviewView: View {
         ScrollView {
             VStack(spacing: 18) {
                 rangePicker
+                periodNav
                 summary
                 legend
                 list
@@ -1013,7 +1057,10 @@ struct AttendanceOverviewView: View {
         HStack(spacing: 8) {
             ForEach(Range.allCases) { r in
                 FilterPill(title: r.rawValue, isSelected: range == r) {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { range = r }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        range = r
+                        periodOffset = 0
+                    }
                 }
             }
             Spacer()
@@ -1021,10 +1068,64 @@ struct AttendanceOverviewView: View {
         .padding(.top, 8)
     }
 
+    private var periodNav: some View {
+        HStack {
+            Button {
+                shift(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 36, height: 36)
+                    .lxpGlassCircle()
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text(periodTitle)
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .lineLimit(1)
+
+            Spacer()
+
+            Button {
+                shift(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(canGoForward ? .primary : .tertiary)
+                    .frame(width: 36, height: 36)
+                    .lxpGlassCircle()
+            }
+            .buttonStyle(.plain)
+            .disabled(!canGoForward)
+        }
+    }
+
+    private func shift(by step: Int) {
+        let next = periodOffset + step
+        guard next <= 0 else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            periodOffset = next
+        }
+        // Если уходим в далёкое прошлое — догружаем расписание.
+        let cal = Calendar.current
+        let daysBack: Int
+        switch range {
+        case .week: daysBack = abs(next) * 7 + 14
+        case .month: daysBack = abs(next) * 31 + 31
+        }
+        if daysBack > 60 {
+            Task { await store.ensurePastSchedule(days: daysBack + 7) }
+        }
+    }
+
     private var summary: some View {
         GlassCard(padding: 20, corner: 26) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("За \(range == .week ? "неделю" : "месяц")".uppercased())
+                Text(summaryHeader.uppercased())
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .tracking(0.6)
@@ -1055,6 +1156,19 @@ struct AttendanceOverviewView: View {
             return "\(attended) из \(total) ч · пропущено \(formatHours(metric.missedHours)) ч"
         }
         return "\(attended) из \(total) ч"
+    }
+
+    private var summaryHeader: String {
+        switch range {
+        case .week:
+            if periodOffset == 0 { return "За эту неделю" }
+            if periodOffset == -1 { return "За прошлую неделю" }
+            return "За неделю"
+        case .month:
+            if periodOffset == 0 { return "За этот месяц" }
+            if periodOffset == -1 { return "За прошлый месяц" }
+            return "За месяц"
+        }
     }
 
     private func formatHours(_ h: Double) -> String {
@@ -1164,9 +1278,6 @@ struct DisciplineAttendanceRow: View {
                 Text("\(Int((metric.rate * 100).rounded()))%")
                     .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
             }
             AttendanceBar(rate: metric.rate)
             Text(detailLine)
