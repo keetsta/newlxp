@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "StudentAvailableTasks"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query StudentAvailableTasks($input: StudentAvailableTasksInput!) { studentAvailableTasks(input: $input) { __typename page perPage total totalPages hasMore items { __typename contentBlockId kind taskDeadline passDate testAvailableFrom testAvailableTo topic { __typename id name isCheckPoint chapter { __typename discipline { __typename id name } } } contentBlock { __typename ... on TaskDisciplineTopicContentBlock { id name maxScore } ... on TestDisciplineTopicContentBlock { id name maxScore } ... on InfoDisciplineTopicContentBlock { id name } } } } }"#
+        #"query StudentAvailableTasks($input: StudentAvailableTasksInput!) { studentAvailableTasks(input: $input) { __typename page perPage total totalPages hasMore items { __typename contentBlockId kind taskDeadline passDate testAvailableFrom testAvailableTo topic { __typename id name order isCheckPoint chapter { __typename order discipline { __typename id name } } } contentBlock { __typename ... on TaskDisciplineTopicContentBlock { id name maxScore } ... on TestDisciplineTopicContentBlock { id name maxScore } ... on InfoDisciplineTopicContentBlock { id name } } } } }"#
       ))
 
     public var input: StudentAvailableTasksInput
@@ -108,6 +108,7 @@ extension LXPSchema {
               .field("__typename", String.self),
               .field("id", LXPSchema.UUID.self),
               .field("name", String.self),
+              .field("order", Double.self),
               .field("isCheckPoint", Bool.self),
               .field("chapter", Chapter.self),
             ] }
@@ -117,6 +118,7 @@ extension LXPSchema {
 
             var id: LXPSchema.UUID { __data["id"] }
             var name: String { __data["name"] }
+            var order: Double { __data["order"] }
             var isCheckPoint: Bool { __data["isCheckPoint"] }
             var chapter: Chapter { __data["chapter"] }
 
@@ -130,12 +132,14 @@ extension LXPSchema {
               static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.DisciplineChapter }
               static var __selections: [ApolloAPI.Selection] { [
                 .field("__typename", String.self),
+                .field("order", Double.self),
                 .field("discipline", Discipline.self),
               ] }
               static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
                 StudentAvailableTasksQuery.Data.StudentAvailableTasks.Item.Topic.Chapter.self
               ] }
 
+              var order: Double { __data["order"] }
               var discipline: Discipline { __data["discipline"] }
 
               /// StudentAvailableTasks.Item.Topic.Chapter.Discipline

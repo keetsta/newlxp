@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
 
@@ -21,6 +22,11 @@ struct AnswerView: View {
     @State private var isSubmitting: Bool = false
     @State private var deletingAnswerId: String? = nil
     @State private var localError: String? = nil
+    /// Подтверждение удаления отправленного ответа: храним id ответа, который
+    /// собираемся удалять. nil — диалог не показан.
+    @State private var pendingDeleteAnswerId: String? = nil
+    /// Открытое во весь экран фото из приложенных к ответу файлов.
+    @State private var presentedPhoto: URL? = nil
 
     private var answers: [StudentTaskAnswer] { store.answersByBlock[block.id] ?? [] }
     private var isLoadingInitial: Bool { store.answersByBlock[block.id] == nil }
@@ -72,6 +78,41 @@ struct AnswerView: View {
         .task(id: block.id) {
             if store.answersByBlock[block.id] == nil {
                 await store.loadAnswers(topicId: topicId, contentBlockId: block.id)
+            }
+        }
+        .confirmationDialog(
+            "Удалить ответ?",
+            isPresented: Binding(
+                get: { pendingDeleteAnswerId != nil },
+                set: { if !$0 { pendingDeleteAnswerId = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDeleteAnswerId
+        ) { answerId in
+            Button("Удалить", role: .destructive) {
+                pendingDeleteAnswerId = nil
+                Task {
+                    deletingAnswerId = answerId
+                    defer { Task { @MainActor in deletingAnswerId = nil } }
+                    _ = await store.deleteAnswer(
+                        answerId: answerId,
+                        topicId: topicId,
+                        contentBlockId: block.id
+                    )
+                }
+            }
+            Button("Отмена", role: .cancel) {
+                pendingDeleteAnswerId = nil
+            }
+        } message: { _ in
+            Text("Восстановить отправленный ответ нельзя.")
+        }
+        .fullScreenCover(item: Binding<IdentifiableURL?>(
+            get: { presentedPhoto.map { IdentifiableURL(url: $0) } },
+            set: { presentedPhoto = $0?.url }
+        )) { photo in
+            PhotoViewerView(url: photo.url) {
+                presentedPhoto = nil
             }
         }
     }
@@ -129,11 +170,7 @@ struct AnswerView: View {
                 }
                 Spacer()
                 Button {
-                    Task {
-                        deletingAnswerId = a.id
-                        defer { Task { @MainActor in deletingAnswerId = nil } }
-                        _ = await store.deleteAnswer(answerId: a.id, topicId: topicId, contentBlockId: block.id)
-                    }
+                    pendingDeleteAnswerId = a.id
                 } label: {
                     if deletingAnswerId == a.id {
                         ProgressView().controlSize(.small)
@@ -159,7 +196,9 @@ struct AnswerView: View {
                         HStack(spacing: 8) {
                             ForEach(images, id: \.self) { url in
                                 if let u = URL(string: url) {
-                                    Link(destination: u) {
+                                    Button {
+                                        presentedPhoto = u
+                                    } label: {
                                         RemoteImage(url: u)
                                             .frame(width: 120, height: 120)
                                             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -193,7 +232,11 @@ struct AnswerView: View {
     private func answerContent(_ a: StudentTaskAnswer) -> some View {
         if let raw = a.content, !raw.isEmpty {
             if let blocks = EditorJSParser.parse(raw), !blocks.isEmpty {
-                EditorContentView(blocks: blocks)
+                // Передаём колбэк — встроенные картинки из веб-редактора
+                // ITHub станут тапабельными и откроют PhotoViewerView.
+                EditorContentView(blocks: blocks) { url in
+                    presentedPhoto = url
+                }
             } else {
                 Text(InlineHTML.attributed(raw))
                     .font(.subheadline)
@@ -572,4 +615,249 @@ struct PendingAttachment: Identifiable {
     let data: Data
     var uploadedUrl: String? = nil
     var state: State = .ready
+}
+
+/// Обёртка для презентации фотографии через `fullScreenCover(item:)` —
+/// `URL` нет `Identifiable` по умолчанию.
+private struct IdentifiableURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
+/// Полноэкранный просмотр фотографии с pinch-to-zoom и сохранением в Фото.
+/// Загружаем тем же `RemoteImageLoader`, что и thumbnail — он кэширует
+/// расшифрованный `UIImage`, чтобы не качать дважды.
+struct PhotoViewerView: View {
+    let url: URL
+    let onClose: () -> Void
+
+    @State private var image: UIImage?
+    @State private var failed: Bool = false
+    @State private var scale: CGFloat = 1
+    @State private var lastScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var lastOffset: CGSize = .zero
+    @State private var statusMessage: String?
+    @State private var statusIsError: Bool = false
+    @State private var showShareSheet: Bool = false
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .scaleEffect(scale)
+                    .offset(offset)
+                    .gesture(
+                        MagnificationGesture()
+                            .onChanged { value in
+                                scale = max(1, min(6, lastScale * value))
+                            }
+                            .onEnded { _ in
+                                lastScale = scale
+                                if scale <= 1 {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                        scale = 1
+                                        offset = .zero
+                                        lastOffset = .zero
+                                    }
+                                }
+                            }
+                    )
+                    .simultaneousGesture(
+                        DragGesture()
+                            .onChanged { value in
+                                guard scale > 1 else { return }
+                                offset = CGSize(
+                                    width: lastOffset.width + value.translation.width,
+                                    height: lastOffset.height + value.translation.height
+                                )
+                            }
+                            .onEnded { _ in lastOffset = offset }
+                    )
+                    .onTapGesture(count: 2) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            if scale > 1 {
+                                scale = 1
+                                lastScale = 1
+                                offset = .zero
+                                lastOffset = .zero
+                            } else {
+                                scale = 2.5
+                                lastScale = 2.5
+                            }
+                        }
+                    }
+            } else if failed {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title)
+                        .foregroundStyle(.yellow)
+                    Text("Не удалось загрузить изображение")
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                    Link("Открыть в браузере", destination: url)
+                        .font(.subheadline.weight(.semibold))
+                }
+            } else {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(.white)
+            }
+
+            VStack {
+                topBar
+                Spacer()
+                if let statusMessage {
+                    Text(statusMessage)
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(
+                            Capsule().fill(statusIsError ? Color.red.opacity(0.85) : Color.black.opacity(0.6))
+                        )
+                        .foregroundStyle(.white)
+                        .padding(.bottom, 28)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+            }
+        }
+        .task(id: url) { await loadImage() }
+        .sheet(isPresented: $showShareSheet) {
+            if let image {
+                ShareSheet(items: [image])
+            }
+        }
+    }
+
+    private var topBar: some View {
+        HStack {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(.black.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            if image != nil {
+                Button {
+                    showShareSheet = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(.black.opacity(0.5)))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    saveToPhotos()
+                } label: {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(.black.opacity(0.5)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+
+    private func loadImage() async {
+        if let cached = RemoteImageLoader.shared.image(for: url) {
+            self.image = cached
+            return
+        }
+        if let loaded = await RemoteImageLoader.shared.load(url) {
+            self.image = loaded
+        } else {
+            self.failed = true
+        }
+    }
+
+    private func saveToPhotos() {
+        guard let image else { return }
+        // PHPhotoLibrary.requestAuthorization сам показывает системный prompt
+        // при первом обращении. UIImageWriteToSavedPhotosAlbum использует те
+        // же права (NSPhotoLibraryAddUsageDescription).
+        PhotoSaveHelper.save(image: image) { result in
+            Task { @MainActor in
+                switch result {
+                case .success:
+                    showStatus("Сохранено в Фото", isError: false)
+                case .failure(let err):
+                    showStatus("Не удалось сохранить: \(err.localizedDescription)", isError: true)
+                }
+            }
+        }
+    }
+
+    private func showStatus(_ text: String, isError: Bool) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            statusMessage = text
+            statusIsError = isError
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                statusMessage = nil
+            }
+        }
+    }
+}
+
+/// Обёртка над `UIImageWriteToSavedPhotosAlbum` — Apple использует selector-based
+/// completion, а нам удобнее замыкание.
+private final class PhotoSaveHelper: NSObject {
+    private let completion: (Result<Void, Error>) -> Void
+    private static var inflight: [PhotoSaveHelper] = []
+
+    private init(completion: @escaping (Result<Void, Error>) -> Void) {
+        self.completion = completion
+    }
+
+    static func save(image: UIImage, completion: @escaping (Result<Void, Error>) -> Void) {
+        let helper = PhotoSaveHelper(completion: completion)
+        inflight.append(helper)
+        UIImageWriteToSavedPhotosAlbum(
+            image,
+            helper,
+            #selector(PhotoSaveHelper.finished(_:didFinishSavingWithError:contextInfo:)),
+            nil
+        )
+    }
+
+    @objc private func finished(_ image: UIImage,
+                                didFinishSavingWithError error: Error?,
+                                contextInfo: UnsafeRawPointer) {
+        if let error {
+            completion(.failure(error))
+        } else {
+            completion(.success(()))
+        }
+        Self.inflight.removeAll { $0 === self }
+    }
+}
+
+/// Стандартный `UIActivityViewController` через UIViewControllerRepresentable —
+/// нативный share-sheet с «Сохранить изображение», AirDrop и прочим.
+private struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

@@ -15,8 +15,10 @@ query StudentAvailableTasks($input: StudentAvailableTasksInput!) {
       topic {
         id
         name
+        order
         isCheckPoint
         chapter {
+          order
           discipline {
             id
             name

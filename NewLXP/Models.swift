@@ -279,6 +279,53 @@ struct Assignment: Identifiable, Hashable, Codable {
     let topicId: String?
     let deadline: Date
     let status: AssignmentStatus
+    /// Тип блока: задание или КТ. Info-блоки в список не попадают.
+    var kind: ContentBlockKind = .task
+    /// Тема — контрольная точка (рендерим флаг рядом с темой).
+    var isCheckpoint: Bool = false
+    var maxScore: Double? = nil
+
+    init(id: String = UUID().uuidString,
+         title: String,
+         discipline: String,
+         topic: String,
+         topicId: String?,
+         deadline: Date,
+         status: AssignmentStatus,
+         kind: ContentBlockKind = .task,
+         isCheckpoint: Bool = false,
+         maxScore: Double? = nil) {
+        self.id = id
+        self.title = title
+        self.discipline = discipline
+        self.topic = topic
+        self.topicId = topicId
+        self.deadline = deadline
+        self.status = status
+        self.kind = kind
+        self.isCheckpoint = isCheckpoint
+        self.maxScore = maxScore
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, discipline, topic, topicId, deadline, status, kind, isCheckpoint, maxScore
+    }
+
+    /// Кастомный декодер — kind / isCheckpoint / maxScore появились позже,
+    /// в старом кэше их нет. Подставляем дефолты, чтобы не выкидывать кэш.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.title = try c.decode(String.self, forKey: .title)
+        self.discipline = try c.decode(String.self, forKey: .discipline)
+        self.topic = try c.decode(String.self, forKey: .topic)
+        self.topicId = try c.decodeIfPresent(String.self, forKey: .topicId)
+        self.deadline = try c.decode(Date.self, forKey: .deadline)
+        self.status = try c.decode(AssignmentStatus.self, forKey: .status)
+        self.kind = try c.decodeIfPresent(ContentBlockKind.self, forKey: .kind) ?? .task
+        self.isCheckpoint = try c.decodeIfPresent(Bool.self, forKey: .isCheckpoint) ?? false
+        self.maxScore = try c.decodeIfPresent(Double.self, forKey: .maxScore)
+    }
 }
 
 struct DigestEvent: Identifiable, Hashable {

@@ -117,34 +117,126 @@ struct AssignmentsView: View {
     @EnvironmentObject private var store: AppStore
     @State private var query = ""
     @State private var filter: AssignmentStatus? = nil
+    @State private var sort: SortMode = .deadline
+    @State private var groupBy: GroupBy = .discipline
 
+    /// Способ упорядочивания заданий внутри текущего фильтра.
+    enum SortMode: String, CaseIterable, Identifiable {
+        case deadline       // ближайший дедлайн
+        case deadlineDesc   // дальний дедлайн
+        case status         // открытые → просрочка → сданные
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .deadline: "Срок ↑"
+            case .deadlineDesc: "Срок ↓"
+            case .status: "Статус"
+            }
+        }
+    }
+
+    enum GroupBy: String, CaseIterable, Identifiable {
+        case discipline
+        case deadline
+        case none
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .discipline: "По дисциплинам"
+            case .deadline: "По срокам"
+            case .none: "Без групп"
+            }
+        }
+    }
+
+    /// Отфильтрованный по статусу/поиску список.
     private var items: [Assignment] {
         store.assignments.filter {
             (filter == nil || $0.status == filter) &&
             (query.isEmpty ||
              $0.title.localizedCaseInsensitiveContains(query) ||
-             $0.discipline.localizedCaseInsensitiveContains(query))
+             $0.discipline.localizedCaseInsensitiveContains(query) ||
+             $0.topic.localizedCaseInsensitiveContains(query))
         }
     }
 
-    /// Группы заданий по дисциплине. Внутри группы — по дедлайну (ближайший первый),
-    /// сами группы — по ближайшему дедлайну в группе. Задания без названия
-    /// дисциплины сваливаются в «Прочее» в самый низ.
-    private var groups: [(discipline: String, items: [Assignment])] {
-        let buckets = Dictionary(grouping: items) { a in
-            a.discipline.isEmpty ? "Прочее" : a.discipline
+    /// Сортировка внутри одной группы.
+    private func sorted(_ list: [Assignment]) -> [Assignment] {
+        switch sort {
+        case .deadline:
+            return list.sorted { $0.deadline < $1.deadline }
+        case .deadlineDesc:
+            return list.sorted { $0.deadline > $1.deadline }
+        case .status:
+            return list.sorted { lhs, rhs in
+                let order: (AssignmentStatus) -> Int = {
+                    switch $0 {
+                    case .open: 0
+                    case .overdue: 1
+                    case .submitted: 2
+                    }
+                }
+                if order(lhs.status) != order(rhs.status) {
+                    return order(lhs.status) < order(rhs.status)
+                }
+                return lhs.deadline < rhs.deadline
+            }
         }
-        return buckets
-            .map { (key, list) in
-                (key, list.sorted { $0.deadline < $1.deadline })
+    }
+
+    /// Группы заданий. Для группировки по дисциплине — словарь по `discipline`,
+    /// порядок групп — по ближайшему дедлайну. Для дедлайнов — корзины «сегодня /
+    /// завтра / на этой неделе / позже / без срока / просрочено». Для «без групп» —
+    /// одна группа без заголовка.
+    private var groups: [(title: String, items: [Assignment])] {
+        let visible = sorted(items)
+        switch groupBy {
+        case .discipline:
+            let buckets = Dictionary(grouping: visible) { a in
+                a.discipline.isEmpty ? "Прочее" : a.discipline
             }
-            .sorted { lhs, rhs in
-                if lhs.0 == "Прочее" { return false }
-                if rhs.0 == "Прочее" { return true }
-                let l = lhs.1.first?.deadline ?? .distantFuture
-                let r = rhs.1.first?.deadline ?? .distantFuture
-                return l < r
+            return buckets
+                .map { (key, list) in (key, sorted(list)) }
+                .sorted { lhs, rhs in
+                    if lhs.0 == "Прочее" { return false }
+                    if rhs.0 == "Прочее" { return true }
+                    let l = lhs.1.first?.deadline ?? .distantFuture
+                    let r = rhs.1.first?.deadline ?? .distantFuture
+                    return l < r
+                }
+        case .deadline:
+            let cal = Calendar.current
+            let now = Date()
+            let today = cal.startOfDay(for: now)
+            let tomorrow = cal.date(byAdding: .day, value: 1, to: today)!
+            let weekEnd = cal.date(byAdding: .day, value: 7, to: today)!
+            var buckets: [String: [Assignment]] = [:]
+            var order: [String] = []
+            func add(_ key: String, _ a: Assignment) {
+                if buckets[key] == nil {
+                    order.append(key)
+                    buckets[key] = []
+                }
+                buckets[key]?.append(a)
             }
+            for a in visible {
+                let key: String
+                if a.status == .overdue { key = "Просрочено" }
+                else if a.deadline >= Date.distantFuture.addingTimeInterval(-1) { key = "Без срока" }
+                else if a.deadline < tomorrow { key = "Сегодня" }
+                else if cal.isDate(a.deadline, inSameDayAs: tomorrow) { key = "Завтра" }
+                else if a.deadline < weekEnd { key = "На этой неделе" }
+                else { key = "Позже" }
+                add(key, a)
+            }
+            // Стабильный порядок корзин.
+            let preferred = ["Просрочено", "Сегодня", "Завтра", "На этой неделе", "Позже", "Без срока"]
+            let prefSet = Set(preferred)
+            let extras = order.filter { !prefSet.contains($0) }
+            return (preferred.filter { buckets[$0] != nil } + extras).map { ($0, buckets[$0] ?? []) }
+        case .none:
+            return [("", visible)]
+        }
     }
 
     /// Стор пустой и сетевая загрузка ещё не отработала — показываем скелетоны.
@@ -155,7 +247,9 @@ struct AssignmentsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                statsRow
                 filtersRow
+                sortRow
                 if items.isEmpty {
                     if isInitialLoad {
                         ForEach(0..<3, id: \.self) { _ in SkeletonAssignmentCard() }
@@ -163,21 +257,23 @@ struct AssignmentsView: View {
                         emptyState
                     }
                 } else {
-                    ForEach(groups, id: \.discipline) { group in
+                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(group.discipline)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
-                                    .tracking(0.5)
-                                    .textCase(.uppercase)
-                                Spacer()
-                                Text("\(group.items.count)")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tertiary)
-                                    .monospacedDigit()
+                            if !group.title.isEmpty {
+                                HStack {
+                                    Text(group.title)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .tracking(0.5)
+                                        .textCase(.uppercase)
+                                    Spacer()
+                                    Text("\(group.items.count)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                        .monospacedDigit()
+                                }
+                                .padding(.horizontal, 4)
                             }
-                            .padding(.horizontal, 4)
                             VStack(spacing: 8) {
                                 ForEach(group.items) { item in
                                     if let id = item.topicId, !id.isEmpty {
@@ -204,6 +300,56 @@ struct AssignmentsView: View {
         .searchable(text: $query, prompt: "Поиск")
         .navigationTitle("Задания")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Группировка", selection: $groupBy) {
+                        ForEach(GroupBy.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    Picker("Сортировка", selection: $sort) {
+                        ForEach(SortMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.body.weight(.semibold))
+                }
+            }
+        }
+    }
+
+    /// Краткая сводка по сторам — сколько открытых / просроченных / КТ.
+    private var statsRow: some View {
+        let total = store.assignments.count
+        let open = store.assignments.filter { $0.status == .open }.count
+        let overdue = store.assignments.filter { $0.status == .overdue }.count
+        let tests = store.assignments.filter { $0.kind == .test && $0.status != .submitted }.count
+        return HStack(spacing: 8) {
+            statTile("Всего", total, .secondary)
+            statTile("Открыто", open, .orange)
+            if overdue > 0 { statTile("Просрочено", overdue, .red) }
+            if tests > 0 { statTile("КТ", tests, .blue) }
+        }
+    }
+
+    private func statTile(_ title: String, _ value: Int, _ tint: Color) -> some View {
+        VStack(spacing: 2) {
+            Text("\(value)")
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .tracking(0.4)
+                .textCase(.uppercase)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .lxpGlass(cornerRadius: 16)
     }
 
     private var filtersRow: some View {
@@ -217,6 +363,19 @@ struct AssignmentsView: View {
             .padding(.horizontal, 4)
             .padding(.vertical, 6)
         }
+    }
+
+    private var sortRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: groupBy == .deadline ? "calendar" : (groupBy == .discipline ? "books.vertical" : "list.bullet"))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+            Text("\(groupBy.label) · сортировка: \(sort.label.lowercased())")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
     }
 
     private var emptyState: some View {
@@ -255,28 +414,34 @@ struct AssignmentCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                // В шапке — тема, к которой относится задание (дисциплина уже
-                // в заголовке группы выше).
+            HStack(spacing: 8) {
+                // Бейдж типа задания: КТ синяя, обычное задание оранжевое.
+                kindBadge
+                // Тема задания. КТ-темы дополнительно метим флажком, как
+                // в DisciplineDetailView.
                 if !assignment.topic.isEmpty {
                     HStack(spacing: 4) {
-                        Image(systemName: "doc.text")
+                        Image(systemName: assignment.isCheckpoint ? "flag.fill" : "doc.text")
                             .font(.caption2.weight(.semibold))
+                            .foregroundStyle(assignment.isCheckpoint ? Color.blue : Color.secondary)
                         Text(assignment.topic)
                             .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    .foregroundStyle(.secondary)
-                    .tracking(0.3)
                 }
                 Spacer()
                 statusPill
             }
             Text(assignment.title)
                 .font(.body.weight(.semibold))
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                Text(deadlineText)
+                .lineLimit(3)
+            HStack(spacing: 12) {
+                Label(deadlineText, systemImage: "clock")
+                if let m = assignment.maxScore, m > 0 {
+                    Label("до \(Int(m.rounded())) б.", systemImage: "star")
+                        .monospacedDigit()
+                }
             }
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -285,6 +450,17 @@ struct AssignmentCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .lxpGlass(cornerRadius: 22)
+    }
+
+    private var kindBadge: some View {
+        let isTest = assignment.kind == .test
+        return Text(isTest ? "КТ" : "Задание")
+            .font(.caption2.weight(.bold))
+            .tracking(0.5)
+            .foregroundStyle(isTest ? Color.blue : Color.orange)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .lxpGlassCapsule(tint: (isTest ? Color.blue : Color.orange).opacity(0.18))
     }
 
     private var deadlineText: String {
@@ -361,7 +537,7 @@ struct DisciplinesView: View {
         .searchable(text: $query, prompt: "Поиск")
         .navigationTitle("Дисциплины")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await store.loadAllDisciplineDetails() }
+        .task { await store.refreshAllDisciplineDetails() }
     }
 
     private var emptyState: some View {
@@ -480,9 +656,11 @@ struct DisciplineDetailView: View {
         .navigationTitle("Дисциплина")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            if detail == nil {
-                await store.loadDisciplineDetail(disciplineId: discipline.id)
-            }
+            // Всегда дергаем сеть на открытии — даже если деталь уже в памяти,
+            // мы хотим свежие баллы (бэк мог их обновить с прошлой загрузки).
+            // Холодный кейс показывает спиннер, тёплый — просто перезапишет
+            // detail в сторе и UI перерисуется.
+            await store.loadDisciplineDetail(disciplineId: discipline.id)
         }
     }
 
@@ -824,7 +1002,7 @@ struct DiaryView: View {
         .background(.background)
         .navigationTitle("Успеваемость")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await store.loadAllDisciplineDetails() }
+        .task { await store.refreshAllDisciplineDetails() }
     }
 
     private var explainer: some View {

@@ -295,40 +295,75 @@ enum TopicRepository {
 }
 
 enum TasksRepository {
-    static func availableTasks(studentId: String, page: Int = 1, pageSize: Int = 50) async throws -> [Assignment] {
-        let input = LXPSchema.StudentAvailableTasksInput(
-            filters: .some(LXPSchema.StudentAvailableTasksFilterInput(
-                fromArchivedDiscipline: .some(false)
-            )),
-            page: Int32(page),
-            pageSize: Int32(pageSize),
-            sorts: LXPSchema.StudentAvailableTasksSortInput(deadlineDate: .some(.case(.asc))),
-            studentId: studentId
-        )
-        let data = try await LXP.apollo.fetchData(LXPSchema.StudentAvailableTasksQuery(input: input))
-        return data.studentAvailableTasks.items.compactMap { item -> Assignment? in
-            let resolvedTitle: String = {
-                if let n = item.contentBlock.asTaskDisciplineTopicContentBlock?.name { return n }
-                if let n = item.contentBlock.asTestDisciplineTopicContentBlock?.name { return n }
-                if let n = item.contentBlock.asInfoDisciplineTopicContentBlock?.name { return n }
-                return item.topic.name
-            }()
-            let deadline = LXPMapping.date(item.taskDeadline) ?? LXPMapping.date(item.testAvailableTo) ?? Date.distantFuture
-            let status: AssignmentStatus = {
-                if item.passDate != nil { return .submitted }
-                if let dl = LXPMapping.date(item.taskDeadline), dl < Date() { return .overdue }
-                return .open
-            }()
-            return Assignment(
-                id: item.contentBlockId,
-                title: resolvedTitle,
-                discipline: item.topic.chapter.discipline.name,
-                topic: item.topic.name,
-                topicId: item.topic.id,
-                deadline: deadline,
-                status: status
+    /// Загружает все доступные студенту задания/КТ. Прежде была одна страница
+    /// pageSize=50 — этого хватало пока заданий было мало, но реальные курсы
+    /// уже превышают лимит. Идём по `hasMore`, склеиваем страницы.
+    /// Info-блоки сервер тоже отдаёт сюда — отфильтровываем на клиенте.
+    static func availableTasks(studentId: String, pageSize: Int = 50, maxPages: Int = 20) async throws -> [Assignment] {
+        var page = 1
+        var collected: [Assignment] = []
+        while page <= maxPages {
+            let input = LXPSchema.StudentAvailableTasksInput(
+                filters: .some(LXPSchema.StudentAvailableTasksFilterInput(
+                    fromArchivedDiscipline: .some(false)
+                )),
+                page: Int32(page),
+                pageSize: Int32(pageSize),
+                sorts: LXPSchema.StudentAvailableTasksSortInput(deadlineDate: .some(.case(.asc))),
+                studentId: studentId
             )
+            let data = try await LXP.apollo.fetchData(LXPSchema.StudentAvailableTasksQuery(input: input))
+            let payload = data.studentAvailableTasks
+            for item in payload.items {
+                guard let assignment = mapAssignment(item) else { continue }
+                collected.append(assignment)
+            }
+            if !payload.hasMore { break }
+            page += 1
         }
+        return collected
+    }
+
+    private static func mapAssignment(_ item: LXPSchema.StudentAvailableTasksQuery.Data.StudentAvailableTasks.Item) -> Assignment? {
+        // Тип блока. Info — это материал, не задание; в список не показываем.
+        let kind: ContentBlockKind = {
+            switch item.kind {
+            case .case(.task): return .task
+            case .case(.test): return .test
+            default: return .info
+            }
+        }()
+        guard kind != .info else { return nil }
+
+        let resolvedTitle: String = {
+            if let n = item.contentBlock.asTaskDisciplineTopicContentBlock?.name { return n }
+            if let n = item.contentBlock.asTestDisciplineTopicContentBlock?.name { return n }
+            if let n = item.contentBlock.asInfoDisciplineTopicContentBlock?.name { return n }
+            return item.topic.name
+        }()
+        let maxScore: Double? =
+            item.contentBlock.asTaskDisciplineTopicContentBlock?.maxScore
+            ?? item.contentBlock.asTestDisciplineTopicContentBlock?.maxScore
+        let deadline = LXPMapping.date(item.taskDeadline)
+            ?? LXPMapping.date(item.testAvailableTo)
+            ?? Date.distantFuture
+        let status: AssignmentStatus = {
+            if item.passDate != nil { return .submitted }
+            if let dl = LXPMapping.date(item.taskDeadline), dl < Date() { return .overdue }
+            return .open
+        }()
+        return Assignment(
+            id: item.contentBlockId,
+            title: resolvedTitle,
+            discipline: item.topic.chapter.discipline.name,
+            topic: item.topic.name,
+            topicId: item.topic.id,
+            deadline: deadline,
+            status: status,
+            kind: kind,
+            isCheckpoint: item.topic.isCheckPoint,
+            maxScore: maxScore
+        )
     }
 }
 

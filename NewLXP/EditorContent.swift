@@ -197,6 +197,11 @@ enum InlineHTML {
 
 struct EditorContentView: View {
     let blocks: [EditorBlock]
+    /// Если задано — встроенные `.image` блоки становятся тапабельными,
+    /// тап вызывает замыкание с URL картинки. Используется в `AnswerView`,
+    /// чтобы открыть фото на полный экран. По умолчанию nil — картинка
+    /// рендерится без жеста (поведение до этого изменения).
+    var onImageTap: ((URL) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -251,7 +256,16 @@ struct EditorContentView: View {
             Divider().padding(.vertical, 4)
         case .image(let url, let caption):
             VStack(alignment: .leading, spacing: 6) {
-                RemoteImage(url: url)
+                if let onImageTap {
+                    Button {
+                        onImageTap(url)
+                    } label: {
+                        RemoteImage(url: url)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    RemoteImage(url: url)
+                }
                 if let caption {
                     Text(InlineHTML.attributed(caption))
                         .font(.caption)

@@ -379,6 +379,11 @@ final class AppStore: ObservableObject {
                 group.addTask { await self.loadAssignments(studentId: studentId) }
                 await group.waitForAll()
             }
+            // После загрузки списка дисциплин — обновляем детали (баллы/темы)
+            // тоже на каждом старте. Иначе `disciplineDetails` хранится с
+            // прошлого запуска: преподаватель ставит баллы, юзер открывает
+            // приложение, а оценка прежняя из кэша.
+            await self.refreshAllDisciplineDetails()
             return
         }
 
@@ -394,6 +399,7 @@ final class AppStore: ObservableObject {
             group.addTask { await self.loadAssignments(studentId: studentId) }
             await group.waitForAll()
         }
+        await self.refreshAllDisciplineDetails()
     }
 
     func loadProfile() async {
@@ -563,6 +569,23 @@ final class AppStore: ObservableObject {
     func loadAllDisciplineDetails() async {
         guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return }
         let toLoad = activeDisciplines.filter { disciplineDetails[$0.id] == nil }
+        guard !toLoad.isEmpty else { return }
+        await withTaskGroup(of: Void.self) { group in
+            for d in toLoad {
+                group.addTask { await self.loadDisciplineDetail(disciplineId: d.id) }
+            }
+            await group.waitForAll()
+        }
+    }
+
+    /// То же, что `loadAllDisciplineDetails`, но ИГНОРИРУЕТ существующий кэш —
+    /// обновляет всё, что считаем активным. Зовётся в `refreshAll` на каждом
+    /// старте, чтобы свежие баллы (которые препод выставил после прошлого
+    /// захода) подтянулись. Сам по себе `loadAllDisciplineDetails` для этого
+    /// не годится: он пропускает дисциплины с уже закэшированным detail-ом.
+    func refreshAllDisciplineDetails() async {
+        guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return }
+        let toLoad = activeDisciplines
         guard !toLoad.isEmpty else { return }
         await withTaskGroup(of: Void.self) { group in
             for d in toLoad {
