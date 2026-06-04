@@ -246,7 +246,7 @@ struct AssignmentsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            LazyVStack(spacing: 14) {
                 statsRow
                 filtersRow
                 sortRow

@@ -93,6 +93,17 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                         .tracking(0.6)
                     Spacer()
+                    if lesson.isOnline {
+                        HStack(spacing: 4) {
+                            Image(systemName: "wifi")
+                            Text("Онлайн")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .lxpGlassCapsule(tint: .green.opacity(0.18))
+                    }
                     Text("\(lesson.order) пара")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)

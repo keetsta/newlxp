@@ -243,9 +243,17 @@ struct LessonRow: View {
             }
             .frame(width: 78, alignment: .leading)
 
-            Rectangle()
-                .frame(width: 1)
-                .foregroundStyle(.quaternary)
+            Group {
+                if lesson.isOnline {
+                    Rectangle()
+                        .frame(width: 2)
+                        .foregroundStyle(.green.opacity(0.7))
+                } else {
+                    Rectangle()
+                        .frame(width: 1)
+                        .foregroundStyle(.quaternary)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(lesson.discipline)
@@ -257,11 +265,11 @@ struct LessonRow: View {
                     .lineLimit(2)
                 HStack(spacing: 8) {
                     HStack(spacing: 4) {
-                        Image(systemName: "mappin.and.ellipse")
+                        Image(systemName: lesson.isOnline ? "wifi" : "mappin.and.ellipse")
                         Text(lesson.location)
                     }
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.caption2.weight(lesson.isOnline ? .semibold : .regular))
+                    .foregroundStyle(lesson.isOnline ? Color.green : Color.secondary.opacity(0.6))
 
                     if let m = lesson.lateMinutes {
                         HStack(spacing: 3) {

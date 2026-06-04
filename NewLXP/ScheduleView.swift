@@ -343,10 +343,23 @@ struct LessonDetailView: View {
     private var header: some View {
         GlassCard(padding: 20, corner: 26) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("\(lesson.order) пара · \(lesson.timeRange)")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .tracking(0.6)
+                HStack(spacing: 8) {
+                    Text("\(lesson.order) пара · \(lesson.timeRange)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .tracking(0.6)
+                    if lesson.isOnline {
+                        HStack(spacing: 4) {
+                            Image(systemName: "wifi")
+                            Text("Онлайн")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .lxpGlassCapsule(tint: .green.opacity(0.18))
+                    }
+                }
                 Text(lesson.discipline)
                     .font(.title2.weight(.semibold))
                 Text(lesson.topic)
