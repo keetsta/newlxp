@@ -26,9 +26,15 @@ struct ErrorBanner: View {
                     Button {
                         dismiss()
                     } label: {
+                        // Хитпойнт у одного «голого» SF Symbol .caption размера —
+                        // буквально ~10pt, попасть в него без увеличения экрана
+                        // нереально. Выдаём кнопке нормальный target 32×32 и
+                        // прозрачный hit shape, чтобы тапалось всё это поле.
                         Image(systemName: "xmark")
-                            .font(.caption.weight(.semibold))
+                            .font(.footnote.weight(.bold))
                             .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
