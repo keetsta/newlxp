@@ -96,7 +96,7 @@ final class AppStore: ObservableObject {
 
     var nearestDeadline: Assignment? {
         assignments
-            .filter { $0.status == .open }
+            .filter { $0.status == .open && $0.deadline < Date.distantFuture.addingTimeInterval(-1) }
             .sorted { $0.deadline < $1.deadline }
             .first
     }
@@ -263,7 +263,7 @@ final class AppStore: ObservableObject {
         }
 
         let openDeadlines = assignments
-            .filter { $0.status == .open }
+            .filter { $0.status == .open && $0.deadline < Date.distantFuture.addingTimeInterval(-1) }
             .sorted { $0.deadline < $1.deadline }
         for a in openDeadlines.prefix(3) {
             let days = cal.dateComponents([.day], from: cal.startOfDay(for: now), to: cal.startOfDay(for: a.deadline)).day ?? 0
