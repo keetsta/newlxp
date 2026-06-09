@@ -123,6 +123,16 @@ extension ApolloClient {
     /// «Сессия истекла» один раз пробуем `refreshToken`, обновляем
     /// `TokenStore.accessToken` и повторяем запрос. Бесконечной рекурсии нет —
     /// `allowRefresh = false` на повторном вызове.
+    ///
+    /// **Partial data**: GraphQL допускает частичный ответ — `data` приходит
+    /// заполненной (хоть и с null'ами в местах, где сервер не смог
+    /// распарсить), и параллельно отдаётся массив `errors`. Бэк ITHub этим
+    /// активно пользуется — например, иногда роняет `howStudyIt` или одно
+    /// поле блока, и весь GraphQL ответ помечается ошибкой, хотя 95%
+    /// контента валидно. Раньше мы кидали ошибку при ЛЮБОМ непустом
+    /// `errors` — экран темы тогда не открывался вовсе. Теперь: если `data`
+    /// пришла, возвращаем её, errors просто пишем в лог. Кидаем только
+    /// если data нет совсем или это auth-ошибка (тогда даём шанс рефрешу).
     private func fetchData<Q: GraphQLQuery>(_ query: Q, allowRefresh: Bool) async throws -> Q.Data
     where Q.ResponseFormat == SingleResponseFormat {
         do {
@@ -130,17 +140,27 @@ extension ApolloClient {
                 query: query,
                 cachePolicy: .networkOnly
             )
-            if let errors = response.errors, !errors.isEmpty {
-                let msg = errors.compactMap { $0.message }.joined(separator: "; ")
-                if allowRefresh, isExpiredSessionMessage(msg) {
-                    if try await refreshAccessToken() {
-                        return try await fetchData(query, allowRefresh: false)
-                    }
-                }
-                throw LXPError.server(msg.isEmpty ? "GraphQL error" : msg)
+            if let errs = response.errors, !errs.isEmpty {
+                logErrors(errs, op: String(describing: Q.self))
             }
-            guard let data = response.data else { throw LXPError.decoding }
-            return data
+            let errorMessage = response.errors?.compactMap { $0.message }.joined(separator: "; ") ?? ""
+            // Сервер ITHub в мобильных запросах часто шлёт generic «Что-то
+            // пошло не так...» с `extensions.code = "UNAUTHENTICATED"` —
+            // ловим именно по коду, а не по тексту, иначе рефреш не
+            // срабатывает и каждый запрос фейлится со старым токеном.
+            if allowRefresh, !errorMessage.isEmpty,
+               isAuthError(response.errors) || isExpiredSessionMessage(errorMessage) {
+                if try await refreshAccessToken() {
+                    return try await fetchData(query, allowRefresh: false)
+                }
+            }
+            if let data = response.data {
+                if !errorMessage.isEmpty {
+                    LXPLog.debug("[LXP] partial data with errors: \(errorMessage)")
+                }
+                return data
+            }
+            throw LXPError.server(errorMessage.isEmpty ? "Нет данных" : errorMessage)
         } catch let urlError as URLError {
             LXPLog.debug("[LXP] URLError code=\(urlError.code.rawValue) desc=\(urlError.localizedDescription) host=\(urlError.failingURL?.host ?? "?")")
             throw LXPError.server("\(urlError.localizedDescription) (code \(urlError.code.rawValue))")
@@ -150,6 +170,32 @@ extension ApolloClient {
         } catch {
             LXPLog.debug("[LXP] Other error: \(error)")
             throw error
+        }
+    }
+
+    /// `extensions.code == "UNAUTHENTICATED"` — стандартный сигнал GraphQL
+    /// что токен невалиден. Бэк ITHub маскирует его под «Что-то пошло не
+    /// так», полагаясь на код в extensions.
+    private func isAuthError(_ errors: [GraphQLError]?) -> Bool {
+        guard let errors else { return false }
+        for e in errors {
+            if let code = e.extensions?["code"] as? String,
+               code == "UNAUTHENTICATED" || code == "UNAUTHORIZED" {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Подробный лог GraphQL-ошибок для диагностики 500 от ITHub. Без этого
+    /// в `error.message` приходит только generic «Что-то пошло не так»;
+    /// `path`/`extensions` указывают на конкретное упавшее поле.
+    private func logErrors(_ errors: [GraphQLError], op: String) {
+        for (i, e) in errors.enumerated() {
+            let path = e.path?.map { "\($0)" }.joined(separator: ".") ?? "?"
+            let ext = e.extensions?.map { "\($0.key)=\($0.value)" }.joined(separator: " ") ?? "-"
+            let loc = e.locations?.map { "L\($0.line):\($0.column)" }.joined(separator: ",") ?? "-"
+            LXPLog.debug("[LXP][gql-err] \(op)#\(i) msg=\(e.message ?? "nil") path=\(path) ext=\(ext) loc=\(loc)")
         }
     }
 
@@ -173,17 +219,23 @@ extension ApolloClient {
     where M.ResponseFormat == SingleResponseFormat {
         do {
             let response: GraphQLResponse<M> = try await self.perform(mutation: mutation)
-            if let errors = response.errors, !errors.isEmpty {
-                let msg = errors.compactMap { $0.message }.joined(separator: "; ")
-                if allowRefresh, isExpiredSessionMessage(msg) {
-                    if try await refreshAccessToken() {
-                        return try await performData(mutation, allowRefresh: false)
-                    }
-                }
-                throw LXPError.server(msg.isEmpty ? "GraphQL error" : msg)
+            if let errs = response.errors, !errs.isEmpty {
+                logErrors(errs, op: String(describing: M.self))
             }
-            guard let data = response.data else { throw LXPError.decoding }
-            return data
+            let errorMessage = response.errors?.compactMap { $0.message }.joined(separator: "; ") ?? ""
+            if allowRefresh, !errorMessage.isEmpty,
+               isAuthError(response.errors) || isExpiredSessionMessage(errorMessage) {
+                if try await refreshAccessToken() {
+                    return try await performData(mutation, allowRefresh: false)
+                }
+            }
+            if let data = response.data {
+                if !errorMessage.isEmpty {
+                    LXPLog.debug("[LXP] mutation partial data with errors: \(errorMessage)")
+                }
+                return data
+            }
+            throw LXPError.server(errorMessage.isEmpty ? "Нет данных" : errorMessage)
         } catch let urlError as URLError {
             LXPLog.debug("[LXP] mutation URLError code=\(urlError.code.rawValue) desc=\(urlError.localizedDescription)")
             throw LXPError.server("\(urlError.localizedDescription) (code \(urlError.code.rawValue))")

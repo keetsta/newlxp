@@ -473,7 +473,11 @@ struct TopicDetailView: View {
     let topicId: String
     let fallbackTitle: String
 
+    @State private var loadError: String? = nil
+    @State private var isReloading: Bool = false
+
     private var detail: TopicDetail? { store.topicDetails[topicId] }
+    private var isLoadingInitial: Bool { detail == nil && loadError == nil }
 
     var body: some View {
         ScrollView {
@@ -492,6 +496,8 @@ struct TopicDetailView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 32)
                     }
+                } else if let err = loadError {
+                    loadErrorCard(err)
                 } else {
                     HStack {
                         ProgressView().controlSize(.small)
@@ -510,7 +516,42 @@ struct TopicDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             if detail == nil {
-                await store.loadTopicDetail(topicId: topicId)
+                await reload()
+            }
+        }
+    }
+
+    private func reload() async {
+        isReloading = true
+        defer { isReloading = false }
+        loadError = await store.loadTopicDetail(topicId: topicId)
+    }
+
+    private func loadErrorCard(_ message: String) -> some View {
+        GlassCard(padding: 16, corner: 18) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Не удалось загрузить материалы")
+                        .font(.subheadline.weight(.semibold))
+                }
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task { await reload() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isReloading { ProgressView().controlSize(.small) }
+                        Text(isReloading ? "Загружаем…" : "Повторить")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .lxpGlassCapsule(tint: .blue.opacity(0.18))
+                }
+                .buttonStyle(.plain)
+                .disabled(isReloading)
             }
         }
     }

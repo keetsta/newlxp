@@ -11,6 +11,7 @@ import SwiftUI
 struct NewLXPApp: App {
     @StateObject private var store = AppStore.shared
     @AppStorage("appearance") private var appearance: AppearanceMode = .system
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,11 @@ struct NewLXPApp: App {
                 .environmentObject(store)
                 .preferredColorScheme(appearance.colorScheme)
                 .task { await store.bootstrap() }
+                .onChange(of: scenePhase) { phase in
+                    if phase == .active {
+                        Task { await store.refreshIfStale() }
+                    }
+                }
         }
     }
 }

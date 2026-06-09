@@ -22,6 +22,9 @@ struct AnswerView: View {
     @State private var isSubmitting: Bool = false
     @State private var deletingAnswerId: String? = nil
     @State private var localError: String? = nil
+    /// Ошибка загрузки списка ответов — показываем inline с кнопкой «Повторить».
+    @State private var loadError: String? = nil
+    @State private var isReloading: Bool = false
     /// Подтверждение удаления отправленного ответа: храним id ответа, который
     /// собираемся удалять. nil — диалог не показан.
     @State private var pendingDeleteAnswerId: String? = nil
@@ -29,7 +32,8 @@ struct AnswerView: View {
     @State private var presentedPhoto: URL? = nil
 
     private var answers: [StudentTaskAnswer] { store.answersByBlock[block.id] ?? [] }
-    private var isLoadingInitial: Bool { store.answersByBlock[block.id] == nil }
+    private var hasLoaded: Bool { store.answersByBlock[block.id] != nil }
+    private var isLoadingInitial: Bool { !hasLoaded && loadError == nil }
     private var canSubmit: Bool {
         !isSubmitting && !attachments.contains(where: { $0.state == .uploading })
             && (!draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
@@ -46,6 +50,8 @@ struct AnswerView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
+                } else if let err = loadError, !hasLoaded {
+                    loadErrorCard(err)
                 } else if !answers.isEmpty {
                     submittedList
                 }
@@ -76,8 +82,8 @@ struct AnswerView: View {
             handleImported(result)
         }
         .task(id: block.id) {
-            if store.answersByBlock[block.id] == nil {
-                await store.loadAnswers(topicId: topicId, contentBlockId: block.id)
+            if !hasLoaded {
+                await reloadAnswers()
             }
         }
         .confirmationDialog(
@@ -144,6 +150,44 @@ struct AnswerView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Load error
+
+    private func loadErrorCard(_ message: String) -> some View {
+        GlassCard(padding: 16, corner: 18) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("Не удалось загрузить ответы")
+                        .font(.subheadline.weight(.semibold))
+                }
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button {
+                    Task { await reloadAnswers() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isReloading { ProgressView().controlSize(.small) }
+                        Text(isReloading ? "Загружаем…" : "Повторить")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .lxpGlassCapsule(tint: .blue.opacity(0.18))
+                }
+                .buttonStyle(.plain)
+                .disabled(isReloading)
+            }
+        }
+    }
+
+    private func reloadAnswers() async {
+        isReloading = true
+        defer { isReloading = false }
+        let err = await store.loadAnswers(topicId: topicId, contentBlockId: block.id)
+        loadError = err
     }
 
     // MARK: - Submitted answers

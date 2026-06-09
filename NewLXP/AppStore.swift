@@ -36,6 +36,10 @@ final class AppStore: ObservableObject {
     // Last load error to surface in UI / debug
     @Published var lastError: String?
 
+    /// Время последнего успешного запуска `refreshAll`. Используется, чтобы при
+    /// возврате из фона не дёргать сеть слишком часто (флип экрана/нотификации).
+    private var lastRefreshAt: Date?
+
     var assignmentsCount: Int { assignments.count }
     var disciplinesCount: Int { activeDisciplines.count }
 
@@ -351,8 +355,36 @@ final class AppStore: ObservableObject {
 
     // MARK: - Loading
 
+    /// Обработка ошибки фоновой загрузки. Пишем в лог (DEBUG) — но `lastError`
+    /// и баннер НЕ дёргаем. У фоновых load* всё равно есть кэш + скелетоны;
+    /// баннер «не удалось обновить» выскакивающий на каждый чих сети только
+    /// мешает. Баннер оставляем для пользовательских действий, где явный
+    /// провал важно показать (submit/delete ответа, signIn).
+    private func recordSilent(_ error: Error, op: String) {
+        if LXPError.isCancellation(error) { return }
+        LXPLog.debug("[LXP] \(op) FAIL \(error)")
+    }
+
+    /// Обработка ошибки пользовательского действия — наоборот, должна ярко
+    /// показаться через `ErrorBanner`.
+    private func recordUserAction(_ error: Error, op: String) {
+        if LXPError.isCancellation(error) { return }
+        LXPLog.debug("[LXP] \(op) FAIL \(error)")
+        self.lastError = error.localizedDescription
+    }
+
     func bootstrap() async {
         guard isAuthenticated else { return }
+        await refreshAll()
+    }
+
+    /// Вызывается из `NewLXPApp` при возврате приложения в `.active`. Чтобы не
+    /// бить сеть на каждом мелком флипе сцены (Control Center, шторка
+    /// уведомлений, переключение задач), пропускаем рефреш, если прошлый был
+    /// меньше 30 секунд назад.
+    func refreshIfStale() async {
+        guard isAuthenticated else { return }
+        if let last = lastRefreshAt, Date().timeIntervalSince(last) < 30 { return }
         await refreshAll()
     }
 
@@ -384,6 +416,7 @@ final class AppStore: ObservableObject {
             // прошлого запуска: преподаватель ставит баллы, юзер открывает
             // приложение, а оценка прежняя из кэша.
             await self.refreshAllDisciplineDetails()
+            self.lastRefreshAt = Date()
             return
         }
 
@@ -400,6 +433,7 @@ final class AppStore: ObservableObject {
             await group.waitForAll()
         }
         await self.refreshAllDisciplineDetails()
+        self.lastRefreshAt = Date()
     }
 
     func loadProfile() async {
@@ -411,10 +445,7 @@ final class AppStore: ObservableObject {
             DiskCache.save(.profile, me.profile)
             LXPLog.debug("[LXP] loadProfile OK studentId=\(me.studentId ?? "nil") mates=\(me.profile.groupMates.count)")
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
-            LXPLog.debug("[LXP] loadProfile FAIL \(error)")
+            recordSilent(error, op: "loadProfile")
         }
     }
 
@@ -452,10 +483,7 @@ final class AppStore: ObservableObject {
                 DiskCache.save(.loadedRanges, self.loadedRanges)
                 LXPLog.debug("[LXP] loadSchedule OK \(lessons.count) lessons in \(from)..\(to)")
             } catch {
-                if !LXPError.isCancellation(error) {
-                    self.lastError = error.localizedDescription
-                }
-                LXPLog.debug("[LXP] loadSchedule FAIL \(error)")
+                self.recordSilent(error, op: "loadSchedule")
             }
         }
         inflightSchedule[interval] = task
@@ -541,10 +569,7 @@ final class AppStore: ObservableObject {
             DiskCache.save(.disciplines, self.disciplines)
             LXPLog.debug("[LXP] loadDisciplines OK \(list.count) raw → \(self.disciplines.count) unique")
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
-            LXPLog.debug("[LXP] loadDisciplines FAIL \(error)")
+            recordSilent(error, op: "loadDisciplines")
         }
     }
 
@@ -556,10 +581,7 @@ final class AppStore: ObservableObject {
             DiskCache.save(.disciplineDetails, self.disciplineDetails)
             LXPLog.debug("[LXP] loadDisciplineDetail OK \(disciplineId) topics=\(d.topics.count)")
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
-            LXPLog.debug("[LXP] loadDisciplineDetail FAIL \(error)")
+            recordSilent(error, op: "loadDisciplineDetail")
         }
     }
 
@@ -595,18 +617,21 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func loadTopicDetail(topicId: String) async {
-        guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return }
+    @discardableResult
+    func loadTopicDetail(topicId: String) async -> String? {
+        guard let studentId = TokenStore.studentId, !studentId.isEmpty else {
+            return "Требуется вход"
+        }
         do {
             let t = try await TopicRepository.detail(studentId: studentId, topicId: topicId)
             self.topicDetails[topicId] = t
             DiskCache.save(.topicDetails, self.topicDetails)
             LXPLog.debug("[LXP] loadTopicDetail OK \(topicId) blocks=\(t.blocks.count)")
+            return nil
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
+            if LXPError.isCancellation(error) { return nil }
             LXPLog.debug("[LXP] loadTopicDetail FAIL \(error)")
+            return error.localizedDescription
         }
     }
 
@@ -617,10 +642,7 @@ final class AppStore: ObservableObject {
             DiskCache.save(.assignments, list)
             LXPLog.debug("[LXP] loadAssignments OK \(list.count)")
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
-            LXPLog.debug("[LXP] loadAssignments FAIL \(error)")
+            recordSilent(error, op: "loadAssignments")
         }
     }
 
@@ -661,18 +683,24 @@ final class AppStore: ObservableObject {
 
     // MARK: - Task answers
 
-    func loadAnswers(topicId: String, contentBlockId: String) async {
-        guard let studentId = TokenStore.studentId, !studentId.isEmpty else { return }
+    /// Возвращает текст ошибки или `nil` при успехе. Ошибку показываем
+    /// локально внутри `AnswerView`, а не через глобальный баннер — так
+    /// пользователю проще понять контекст и нажать «Попробовать снова».
+    @discardableResult
+    func loadAnswers(topicId: String, contentBlockId: String) async -> String? {
+        guard let studentId = TokenStore.studentId, !studentId.isEmpty else {
+            return "Требуется вход"
+        }
         do {
             let list = try await AnswersRepository.fetchAnswers(studentId: studentId, topicId: topicId, contentBlockId: contentBlockId)
             self.answersByBlock[contentBlockId] = list
             let allUrls = list.flatMap(\.filesUrls)
             LXPLog.debug("[LXP] loadAnswers OK \(contentBlockId) count=\(list.count) files=\(allUrls.count) urls=\(allUrls)")
+            return nil
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
+            if LXPError.isCancellation(error) { return nil }
             LXPLog.debug("[LXP] loadAnswers FAIL \(error)")
+            return error.localizedDescription
         }
     }
 
@@ -686,13 +714,10 @@ final class AppStore: ObservableObject {
             LXPLog.debug("[LXP] submitAnswer ← id=\(new.id) text=\(new.text.count)ch files=\(new.filesUrls.count) urls=\(new.filesUrls)")
             // На случай, если мутация вернула неполный список (бэк-баг) —
             // перезапросим список ответов с сервера.
-            await self.loadAnswers(topicId: topicId, contentBlockId: contentBlockId)
+            _ = await self.loadAnswers(topicId: topicId, contentBlockId: contentBlockId)
             return true
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
-            LXPLog.debug("[LXP] submitAnswer FAIL \(error)")
+            recordUserAction(error, op: "submitAnswer")
             return false
         }
     }
@@ -708,10 +733,7 @@ final class AppStore: ObservableObject {
             LXPLog.debug("[LXP] deleteAnswer OK \(answerId)")
             return true
         } catch {
-            if !LXPError.isCancellation(error) {
-                self.lastError = error.localizedDescription
-            }
-            LXPLog.debug("[LXP] deleteAnswer FAIL \(error)")
+            recordUserAction(error, op: "deleteAnswer")
             return false
         }
     }

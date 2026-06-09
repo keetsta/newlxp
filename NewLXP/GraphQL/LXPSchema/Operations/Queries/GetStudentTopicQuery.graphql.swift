@@ -118,13 +118,13 @@ extension LXPSchema {
               static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.DisciplineTopicContent }
               static var __selections: [ApolloAPI.Selection] { [
                 .field("__typename", String.self),
-                .field("howStudyIt", String.self),
+                .field("howStudyIt", String?.self),
               ] }
               static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
                 GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.self
               ] }
 
-              var howStudyIt: String { __data["howStudyIt"] }
+              var howStudyIt: String? { __data["howStudyIt"] }
             }
           }
 
@@ -196,7 +196,7 @@ extension LXPSchema {
                 static var __selections: [ApolloAPI.Selection] { [
                   .field("id", LXPSchema.UUID.self),
                   .field("name", String.self),
-                  .field("body", String.self),
+                  .field("body", String?.self),
                   .field("order", Double.self),
                 ] }
                 static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
@@ -206,7 +206,7 @@ extension LXPSchema {
 
                 var id: LXPSchema.UUID { __data["id"] }
                 var name: String { __data["name"] }
-                var body: String { __data["body"] }
+                var body: String? { __data["body"] }
                 var order: Double { __data["order"] }
               }
 
@@ -222,7 +222,7 @@ extension LXPSchema {
                 static var __selections: [ApolloAPI.Selection] { [
                   .field("id", LXPSchema.UUID.self),
                   .field("name", String.self),
-                  .field("body", String.self),
+                  .field("body", String?.self),
                   .field("maxScore", Double?.self),
                   .field("order", Double.self),
                 ] }
@@ -233,7 +233,7 @@ extension LXPSchema {
 
                 var id: LXPSchema.UUID { __data["id"] }
                 var name: String { __data["name"] }
-                var body: String { __data["body"] }
+                var body: String? { __data["body"] }
                 var maxScore: Double? { __data["maxScore"] }
                 var order: Double { __data["order"] }
               }
@@ -250,7 +250,7 @@ extension LXPSchema {
                 static var __selections: [ApolloAPI.Selection] { [
                   .field("id", LXPSchema.UUID.self),
                   .field("name", String.self),
-                  .field("body", String.self),
+                  .field("body", String?.self),
                   .field("maxScore", Double?.self),
                   .field("order", Double.self),
                 ] }
@@ -261,7 +261,7 @@ extension LXPSchema {
 
                 var id: LXPSchema.UUID { __data["id"] }
                 var name: String { __data["name"] }
-                var body: String { __data["body"] }
+                var body: String? { __data["body"] }
                 var maxScore: Double? { __data["maxScore"] }
                 var order: Double { __data["order"] }
               }

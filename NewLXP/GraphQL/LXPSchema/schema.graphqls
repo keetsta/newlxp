@@ -2308,9 +2308,9 @@ type DisciplineTopicCompetence {
 
 type DisciplineTopicContent {
   blocks: [DisciplineTopicContentBlock!]!
-  howStudyIt: String!
+  howStudyIt: String
   topicId: UUID!
-  whyStudyIt: String!
+  whyStudyIt: String
 }
 
 union DisciplineTopicContentBlock = InfoDisciplineTopicContentBlock | TaskDisciplineTopicContentBlock | TestDisciplineTopicContentBlock
@@ -3317,7 +3317,7 @@ enum Identity_RoleType {
 }
 
 type InfoDisciplineTopicContentBlock {
-  body: String!
+  body: String
   id: UUID!
   kind: DisciplineTopicContentBlockKind!
   name: String!
@@ -8232,7 +8232,7 @@ type TaskAnswerComment {
 }
 
 type TaskDisciplineTopicContentBlock {
-  body: String!
+  body: String
   canBeSentAfterDeadline: Boolean! @deprecated(reason: "Возможность отправлять задания после дедлайна теперь задается на уровне группы. Этот поле не актуально")
   competencies: [Competencies!]!
   customStudentDeadline(studentId: UUID): StudentContentBlockCustomDeadline
@@ -8870,7 +8870,7 @@ input TemplateSectionLearningPathsSortInput {
 
 type TestDisciplineTopicContentBlock {
   availableIntervalForStudent(studentId: UUID): Interval
-  body: String!
+  body: String
 
   """Flag of ability to pass test (for students). For admins always false"""
   canBePassed(studentId: UUID): Boolean!
