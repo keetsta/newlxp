@@ -627,6 +627,24 @@ final class AppStore: ObservableObject {
             self.topicDetails[topicId] = t
             DiskCache.save(.topicDetails, self.topicDetails)
             LXPLog.debug("[LXP] loadTopicDetail OK \(topicId) blocks=\(t.blocks.count)")
+            for b in t.blocks {
+                LXPLog.debug("[LXP][topic-block] kind=\(b.kind) id=\(b.id) name=\(b.name) bodyLen=\(b.body.count)")
+                // Полный дамп body чанками по 800 символов — иначе syslog режет
+                // длинные строки. Нужно для диагностики потерянных Editor.js
+                // блоков (например, у задания «КТ5 Анализ трафика»).
+                if !b.body.isEmpty {
+                    let chunkSize = 800
+                    let s = b.body
+                    var i = s.startIndex
+                    var idx = 0
+                    while i < s.endIndex {
+                        let end = s.index(i, offsetBy: chunkSize, limitedBy: s.endIndex) ?? s.endIndex
+                        LXPLog.debug("[LXP][block-body] \(b.id) #\(idx): \(s[i..<end])")
+                        i = end
+                        idx += 1
+                    }
+                }
+            }
             return nil
         } catch {
             if LXPError.isCancellation(error) { return nil }

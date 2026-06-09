@@ -1,16 +1,20 @@
 import Foundation
 import os
 
-/// Лог приложения. Пишет через `os.Logger` в подсистему `me.keetsta.NewLXP`,
-/// категорию `lxp` — видно в Console.app / `idevicesyslog` через
-/// `subsystem == me.keetsta.NewLXP`. Логирование активно и в Release,
-/// чтобы можно было снять диагностику с реального девайса. На объёмы
-/// поводов нет: пишем только осознанно, через `LXPLog.debug`.
+/// Лог приложения. Пишет двумя путями:
+///  • `print` → stdout, виден в Xcode-дебаггере, в `idevicesyslog`/Console
+///    отображается без `subsystem` (просто строкой через `NewLXP[…]`).
+///  • `os.Logger` → unified log, виден в Console.app по фильтру
+///    `subsystem == me.keetsta.NewLXP` и в Xcode (если в нижней панели
+///    выбран All Output / Debug Output).
+/// Двойная запись нужна потому что Xcode-консоль ненадёжно показывает
+/// чистый `os_log` — print гарантирует, что мы увидим лог при отладке.
 enum LXPLog {
     private static let logger = Logger(subsystem: "me.keetsta.NewLXP", category: "lxp")
 
     static func debug(_ message: @autoclosure () -> String) {
         let text = message()
+        print(text)
         logger.log("\(text, privacy: .public)")
     }
 }

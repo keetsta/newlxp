@@ -11,6 +11,28 @@ query GetStudentTopic($input: GetStudentTopicInput!) {
         studyHoursCount
         content {
           howStudyIt
+          blocks {
+            ... on InfoDisciplineTopicContentBlock {
+              id
+              name
+              body
+              order
+            }
+            ... on TaskDisciplineTopicContentBlock {
+              id
+              name
+              body
+              maxScore
+              order
+            }
+            ... on TestDisciplineTopicContentBlock {
+              id
+              name
+              body
+              maxScore
+              order
+            }
+          }
         }
       }
       status

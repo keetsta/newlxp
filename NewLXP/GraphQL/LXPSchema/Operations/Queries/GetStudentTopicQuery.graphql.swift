@@ -9,7 +9,7 @@ extension LXPSchema {
     static let operationName: String = "GetStudentTopic"
     static let operationDocument: ApolloAPI.OperationDocument = .init(
       definition: .init(
-        #"query GetStudentTopic($input: GetStudentTopicInput!) { getStudentTopic(input: $input) { __typename topic { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount content { __typename howStudyIt } } status topicScore contentBlocks { __typename contentBlockId kind taskDeadline passDate testAvailableFrom testAvailableTo testScore contentBlock { __typename ... on InfoDisciplineTopicContentBlock { id name body order } ... on TaskDisciplineTopicContentBlock { id name body maxScore order } ... on TestDisciplineTopicContentBlock { id name body maxScore order } } } } } }"#
+        #"query GetStudentTopic($input: GetStudentTopicInput!) { getStudentTopic(input: $input) { __typename topic { __typename topicId topic { __typename id name order isCheckPoint maxScore studyHoursCount content { __typename howStudyIt blocks { __typename ... on InfoDisciplineTopicContentBlock { id name body order } ... on TaskDisciplineTopicContentBlock { id name body maxScore order } ... on TestDisciplineTopicContentBlock { id name body maxScore order } } } } status topicScore contentBlocks { __typename contentBlockId kind taskDeadline passDate testAvailableFrom testAvailableTo testScore contentBlock { __typename ... on InfoDisciplineTopicContentBlock { id name body order } ... on TaskDisciplineTopicContentBlock { id name body maxScore order } ... on TestDisciplineTopicContentBlock { id name body maxScore order } } } } } }"#
       ))
 
     public var input: GetStudentTopicInput
@@ -119,12 +119,119 @@ extension LXPSchema {
               static var __selections: [ApolloAPI.Selection] { [
                 .field("__typename", String.self),
                 .field("howStudyIt", String?.self),
+                .field("blocks", [Block].self),
               ] }
               static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
                 GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.self
               ] }
 
               var howStudyIt: String? { __data["howStudyIt"] }
+              var blocks: [Block] { __data["blocks"] }
+
+              /// GetStudentTopic.Topic.Topic.Content.Block
+              ///
+              /// Parent Type: `DisciplineTopicContentBlock`
+              struct Block: LXPSchema.SelectionSet {
+                let __data: DataDict
+                init(_dataDict: DataDict) { __data = _dataDict }
+
+                static var __parentType: any ApolloAPI.ParentType { LXPSchema.Unions.DisciplineTopicContentBlock }
+                static var __selections: [ApolloAPI.Selection] { [
+                  .field("__typename", String.self),
+                  .inlineFragment(AsInfoDisciplineTopicContentBlock.self),
+                  .inlineFragment(AsTaskDisciplineTopicContentBlock.self),
+                  .inlineFragment(AsTestDisciplineTopicContentBlock.self),
+                ] }
+                static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                  GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.self
+                ] }
+
+                var asInfoDisciplineTopicContentBlock: AsInfoDisciplineTopicContentBlock? { _asInlineFragment() }
+                var asTaskDisciplineTopicContentBlock: AsTaskDisciplineTopicContentBlock? { _asInlineFragment() }
+                var asTestDisciplineTopicContentBlock: AsTestDisciplineTopicContentBlock? { _asInlineFragment() }
+
+                /// GetStudentTopic.Topic.Topic.Content.Block.AsInfoDisciplineTopicContentBlock
+                ///
+                /// Parent Type: `InfoDisciplineTopicContentBlock`
+                struct AsInfoDisciplineTopicContentBlock: LXPSchema.InlineFragment {
+                  let __data: DataDict
+                  init(_dataDict: DataDict) { __data = _dataDict }
+
+                  typealias RootEntityType = GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block
+                  static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.InfoDisciplineTopicContentBlock }
+                  static var __selections: [ApolloAPI.Selection] { [
+                    .field("id", LXPSchema.UUID.self),
+                    .field("name", String.self),
+                    .field("body", String?.self),
+                    .field("order", Double.self),
+                  ] }
+                  static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                    GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.self,
+                    GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.AsInfoDisciplineTopicContentBlock.self
+                  ] }
+
+                  var id: LXPSchema.UUID { __data["id"] }
+                  var name: String { __data["name"] }
+                  var body: String? { __data["body"] }
+                  var order: Double { __data["order"] }
+                }
+
+                /// GetStudentTopic.Topic.Topic.Content.Block.AsTaskDisciplineTopicContentBlock
+                ///
+                /// Parent Type: `TaskDisciplineTopicContentBlock`
+                struct AsTaskDisciplineTopicContentBlock: LXPSchema.InlineFragment {
+                  let __data: DataDict
+                  init(_dataDict: DataDict) { __data = _dataDict }
+
+                  typealias RootEntityType = GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block
+                  static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.TaskDisciplineTopicContentBlock }
+                  static var __selections: [ApolloAPI.Selection] { [
+                    .field("id", LXPSchema.UUID.self),
+                    .field("name", String.self),
+                    .field("body", String?.self),
+                    .field("maxScore", Double?.self),
+                    .field("order", Double.self),
+                  ] }
+                  static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                    GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.self,
+                    GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.AsTaskDisciplineTopicContentBlock.self
+                  ] }
+
+                  var id: LXPSchema.UUID { __data["id"] }
+                  var name: String { __data["name"] }
+                  var body: String? { __data["body"] }
+                  var maxScore: Double? { __data["maxScore"] }
+                  var order: Double { __data["order"] }
+                }
+
+                /// GetStudentTopic.Topic.Topic.Content.Block.AsTestDisciplineTopicContentBlock
+                ///
+                /// Parent Type: `TestDisciplineTopicContentBlock`
+                struct AsTestDisciplineTopicContentBlock: LXPSchema.InlineFragment {
+                  let __data: DataDict
+                  init(_dataDict: DataDict) { __data = _dataDict }
+
+                  typealias RootEntityType = GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block
+                  static var __parentType: any ApolloAPI.ParentType { LXPSchema.Objects.TestDisciplineTopicContentBlock }
+                  static var __selections: [ApolloAPI.Selection] { [
+                    .field("id", LXPSchema.UUID.self),
+                    .field("name", String.self),
+                    .field("body", String?.self),
+                    .field("maxScore", Double?.self),
+                    .field("order", Double.self),
+                  ] }
+                  static var __fulfilledFragments: [any ApolloAPI.SelectionSet.Type] { [
+                    GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.self,
+                    GetStudentTopicQuery.Data.GetStudentTopic.Topic.Topic.Content.Block.AsTestDisciplineTopicContentBlock.self
+                  ] }
+
+                  var id: LXPSchema.UUID { __data["id"] }
+                  var name: String { __data["name"] }
+                  var body: String? { __data["body"] }
+                  var maxScore: Double? { __data["maxScore"] }
+                  var order: Double { __data["order"] }
+                }
+              }
             }
           }
 

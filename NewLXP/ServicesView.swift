@@ -510,7 +510,12 @@ struct DisciplinesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
+            // LazyVStack — у студентов с большим количеством курсов (100+)
+            // обычный VStack ставит все DisciplineCard в иерархию сразу,
+            // что заметно тормозит на навигации и поиске. Lazy откладывает
+            // создание карточек до момента, когда они скроллом попадают
+            // в видимую область.
+            LazyVStack(spacing: 12) {
                 if items.isEmpty {
                     if isInitialLoad {
                         ForEach(0..<5, id: \.self) { _ in SkeletonDisciplineCard() }
@@ -984,7 +989,10 @@ struct DiaryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 18) {
+            // LazyVStack — у студентов с большим списком активных дисциплин
+            // (десятки) обычный VStack считает sectionCard для всех сразу,
+            // что заметно тормозит при открытии экрана.
+            LazyVStack(spacing: 18) {
                 explainer
                 if sections.isEmpty {
                     emptyState

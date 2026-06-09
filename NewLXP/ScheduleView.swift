@@ -515,8 +515,14 @@ struct TopicDetailView: View {
         .navigationTitle("Тема")
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // Всегда дёргаем сеть на открытие темы — Editor.js часто
+            // редактируется препoдом, а закэшированный JSON визуально
+            // ничем не отличается от свежего. Если кэш есть, UI рендерит
+            // его сразу, а свежие блоки приедут через секунду.
             if detail == nil {
                 await reload()
+            } else {
+                _ = await store.loadTopicDetail(topicId: topicId)
             }
         }
     }
@@ -603,6 +609,7 @@ struct TopicDetailView: View {
                     Text(InlineHTML.attributed(text))
                         .font(.body)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
                 }
             }
         }
@@ -612,8 +619,13 @@ struct TopicDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeader(title: "Содержание", trailing: "\(list.count)")
             VStack(spacing: 10) {
-                ForEach(list) { block in
+                // Используем индекс как часть id — иначе блоки с дублирующимся
+                // serverId (бывает на ITHub: один и тот же InfoContentBlock
+                // попадает в тему дважды через learning paths) схлопываются
+                // в SwiftUI ForEach, и второй визуально не появляется.
+                ForEach(Array(list.enumerated()), id: \.offset) { idx, block in
                     TopicContentBlockCard(block: block, topicId: topicId)
+                        .id("\(block.id)#\(idx)")
                 }
             }
         }
@@ -736,6 +748,7 @@ struct TopicContentBlockCard: View {
                 Text(InlineHTML.attributed(block.body))
                     .font(.subheadline)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
             }
         }
     }

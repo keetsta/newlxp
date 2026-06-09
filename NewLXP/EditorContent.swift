@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 // MARK: - Editor.js parsing
 
@@ -185,7 +186,17 @@ enum InlineHTML {
 
         while index < normalized.endIndex {
             if normalized[index] == "<" {
-                guard let close = normalized[index...].firstIndex(of: ">") else { break }
+                guard let close = normalized[index...].firstIndex(of: ">") else {
+                    // В тексте `<` без закрывающего `>` — это не HTML-тег, а
+                    // просто символ (например, «ip.addr == <адрес>» в коде, или
+                    // «<5» в смысле «меньше пяти»). Раньше тут был `break`, и
+                    // весь хвост строки терялся — отсюда обрезанные карточки
+                    // таблиц. Берём весь остаток как plain-текст и выходим.
+                    var run = AttributedString(decode(String(normalized[index...])))
+                    for s in styles { s.apply(to: &run) }
+                    result.append(run)
+                    return result
+                }
                 let raw = String(normalized[normalized.index(after: index)..<close])
                 let trimmed = raw.trimmingCharacters(in: .whitespaces)
                 if trimmed.hasPrefix("/") {
@@ -309,10 +320,14 @@ struct EditorContentView: View {
             Text(InlineHTML.attributed(text))
                 .font(headerFont(for: level))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         case .paragraph(let text):
             Text(InlineHTML.attributed(text))
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         case .list(let ordered, let items):
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(items.enumerated()), id: \.offset) { i, item in
@@ -324,6 +339,8 @@ struct EditorContentView: View {
                         Text(InlineHTML.attributed(item))
                             .font(.body)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                 }
             }
@@ -333,10 +350,14 @@ struct EditorContentView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(InlineHTML.attributed(text))
                     .font(.body.italic())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
                 if let caption {
                     Text("— \(caption)")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
             }
             .padding(.leading, 12)
@@ -361,6 +382,7 @@ struct EditorContentView: View {
                     Text(InlineHTML.attributed(caption))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -391,6 +413,7 @@ struct EditorContentView: View {
                     Text(InlineHTML.attributed(caption))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
         case .checklist(let items):
@@ -405,6 +428,8 @@ struct EditorContentView: View {
                             .strikethrough(item.checked, color: .secondary)
                             .foregroundStyle(item.checked ? Color.secondary : Color.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                 }
             }
@@ -414,6 +439,7 @@ struct EditorContentView: View {
                     .font(.system(.footnote, design: .monospaced))
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
             }
             .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.10)))
         case .warning(let title, let message):
@@ -424,10 +450,14 @@ struct EditorContentView: View {
                     if !title.isEmpty {
                         Text(InlineHTML.attributed(title))
                             .font(.subheadline.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                     if !message.isEmpty {
                         Text(InlineHTML.attributed(message))
                             .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -497,6 +527,8 @@ struct EditorContentView: View {
             Text(InlineHTML.attributed(html))
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
         case .unsupported(let type):
             Text("[\(type)]")
                 .font(.caption2)
@@ -525,18 +557,44 @@ struct EditorContentView: View {
         let columnCount = rows.map(\.count).max() ?? 0
         guard columnCount > 0 else { return AnyView(EmptyView()) }
 
-        let table = Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
+        // Адаптивный layout: на мобильных таблицы с шапкой и ≥2 столбцами
+        // показываем как стэк карточек «Заголовок: значение». Это сильно
+        // удобнее горизонтального скролла. Если шапки нет или столбцов ≤2,
+        // оставляем обычную таблицу с переносом текста.
+        if withHeading && columnCount >= 2 && rows.count >= 2 {
+            return AnyView(stackedCardsView(rows: rows, columnCount: columnCount))
+        }
+        return AnyView(plainTableView(rows: rows, columnCount: columnCount, withHeading: withHeading))
+    }
+
+    /// Карточный layout: для каждой строки данных рисуем вертикальный список
+    /// «заголовок: значение». Подходит для таблиц-описаний (характеристики
+    /// уровня OSI, требования к параметрам и т.п.). Если карточек ≥4,
+    /// сворачиваем хвост за кнопку «Показать ещё», иначе экран превращается
+    /// в простыню.
+    private func stackedCardsView(rows: [[String]], columnCount: Int) -> some View {
+        let header = rows[0]
+        let dataRows = Array(rows.dropFirst())
+        return StackedCardsContainer(rows: dataRows, header: header, columnCount: columnCount)
+    }
+
+    /// Обычная таблица: Grid с одинаковыми пропорциональными столбцами,
+    /// текст переносится по словам, без горизонтального скролла.
+    private func plainTableView(rows: [[String]], columnCount: Int, withHeading: Bool) -> some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
                 GridRow {
                     ForEach(0..<columnCount, id: \.self) { col in
                         let cell = col < row.count ? row[col] : ""
                         let isHeader = withHeading && idx == 0
                         Text(InlineHTML.attributed(cell))
-                            .font(isHeader ? .footnote.weight(.semibold) : .footnote)
+                            .font(isHeader ? .caption.weight(.semibold) : .caption)
                             .foregroundStyle(isHeader ? Color.primary : Color.primary.opacity(0.92))
                             .padding(.vertical, 7)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, 8)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
                             .background(rowBackground(row: idx, isHeader: isHeader))
                             .overlay(alignment: .trailing) {
                                 if col < columnCount - 1 {
@@ -556,20 +614,14 @@ struct EditorContentView: View {
                 }
             }
         }
-
-        return AnyView(
-            ScrollView(.horizontal, showsIndicators: false) {
-                table
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.secondary.opacity(0.05))
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5)
-                    )
-            }
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(0.05))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 0.5)
         )
     }
 
@@ -578,6 +630,169 @@ struct EditorContentView: View {
             return Color.secondary.opacity(0.14)
         }
         return row.isMultiple(of: 2) ? Color.clear : Color.secondary.opacity(0.05)
+    }
+}
+
+// MARK: - Selectable, properly-wrapping multiline text via UITextView
+
+/// SwiftUI `Text(AttributedString)` внутри `ScrollView`/`LazyVStack` имеет
+/// известные баги с обрезкой длинных многострочных строк, особенно когда
+/// в `AttributedString` есть `link` атрибут (`<a href>` из Editor.js). Любые
+/// комбинации `.lineLimit(nil)` / `.fixedSize` / `.frame` либо обрезают
+/// текст в середине слова, либо ломают высоту контейнера. Это
+/// подтверждённый Apple-bug, не исправленный к iOS 18.
+///
+/// Решение — рендерим длинный текст через `UITextView` со специальным
+/// `sizeThatFits(_:uiView:context:)` (iOS 16+ API), который возвращает
+/// корректную высоту. UITextView надёжно лейаутит, поддерживает выделение,
+/// кликабельные ссылки, копирование, перевод.
+struct SelectableAttributedText: UIViewRepresentable {
+    let attributed: AttributedString
+    let font: UIFont
+    let textColor: UIColor
+
+    init(_ attributed: AttributedString,
+         font: UIFont = .preferredFont(forTextStyle: .subheadline),
+         textColor: UIColor = .label) {
+        self.attributed = attributed
+        self.font = font
+        self.textColor = textColor
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let tv = UITextView()
+        tv.isEditable = false
+        tv.isSelectable = true
+        // КРИТИЧНО: иначе UITextView пытается скроллиться сам и его высота
+        // схлопывается в одну строку, а не растёт под содержимое.
+        tv.isScrollEnabled = false
+        tv.backgroundColor = .clear
+        tv.textContainerInset = .zero
+        tv.textContainer.lineFragmentPadding = 0
+        tv.adjustsFontForContentSizeCategory = true
+        tv.dataDetectorTypes = []
+        tv.linkTextAttributes = [
+            .foregroundColor: UIColor.tintColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        // Гарантия что родительский SwiftUI-стек не сожмёт высоту.
+        tv.setContentCompressionResistancePriority(.required, for: .vertical)
+        tv.setContentHuggingPriority(.required, for: .vertical)
+        return tv
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        // SwiftUI `AttributedString` → `NSAttributedString` идёт через
+        // `init(_:)` со ссылочным параметром.
+        let ns = NSMutableAttributedString(attributedString: NSAttributedString(attributed))
+        let full = NSRange(location: 0, length: ns.length)
+        ns.enumerateAttribute(NSAttributedString.Key.font, in: full, options: []) { value, range, _ in
+            if value == nil {
+                ns.addAttribute(NSAttributedString.Key.font, value: font, range: range)
+            }
+        }
+        ns.enumerateAttribute(NSAttributedString.Key.foregroundColor, in: full, options: []) { value, range, _ in
+            if value == nil {
+                ns.addAttribute(NSAttributedString.Key.foregroundColor, value: textColor, range: range)
+            }
+        }
+        uiView.attributedText = ns
+        uiView.invalidateIntrinsicContentSize()
+    }
+
+    /// iOS 16+ proposal-based sizing — возвращаем корректную высоту для
+    /// предложенной ширины. Без этого SwiftUI берёт интринсик-размер
+    /// UITextView, который расчитывает на бесконечной ширине, и текст
+    /// рендерится в одну строку.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? UIScreen.main.bounds.width
+        let fit = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: ceil(fit.height))
+    }
+}
+
+/// Карточная таблица со своей кнопкой «Показать ещё». Вынесено в отдельную
+/// `View`, чтобы было где жить `@State` для развёрнут/свёрнут.
+private struct StackedCardsContainer: View {
+    let rows: [[String]]
+    let header: [String]
+    let columnCount: Int
+
+    @State private var expanded: Bool = false
+
+    /// Сворачиваем хвост, начиная с 4-й строки. Меньше — простыня не успевает
+    /// надоесть, больше — экран забивается.
+    private static let collapseThreshold = 3
+
+    private var visibleRows: [[String]] {
+        if expanded || rows.count <= Self.collapseThreshold { return rows }
+        return Array(rows.prefix(Self.collapseThreshold))
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ForEach(Array(visibleRows.enumerated()), id: \.offset) { _, row in
+                card(row: row)
+            }
+            if rows.count > Self.collapseThreshold {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(expanded
+                             ? "Свернуть"
+                             : "Показать ещё \(rows.count - Self.collapseThreshold)")
+                            .font(.footnote.weight(.semibold))
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func card(row: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(0..<columnCount, id: \.self) { col in
+                let title = col < header.count ? header[col] : ""
+                let value = col < row.count ? row[col] : ""
+                if !value.isEmpty || !title.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        if !title.isEmpty {
+                            Text(InlineHTML.attributed(title))
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .tracking(0.4)
+                                .textCase(.uppercase)
+                                .lineLimit(nil)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                        // Длинный текст (особенно с inline-ссылками) рендерим
+                        // через UITextView — SwiftUI Text внутри ScrollView/
+                        // LazyVStack обрезает многострочные AttributedString
+                        // с .link, это подтверждённый Apple-баг.
+                        SelectableAttributedText(
+                            InlineHTML.attributed(value),
+                            font: .preferredFont(forTextStyle: .subheadline)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.07))
+        )
     }
 }
 

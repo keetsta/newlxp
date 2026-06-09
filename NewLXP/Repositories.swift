@@ -246,43 +246,69 @@ enum TopicRepository {
             maxScore: st.topic.maxScore,
             hours: st.topic.studyHoursCount
         )
-        let blocks: [TopicContentBlock] = st.contentBlocks
+
+        // Бэк отдаёт два пересекающихся списка:
+        //  • `topic.content.blocks` — ВСЕ блоки темы (info/task/test) в том
+        //    же виде, как показывает сайт. Включая info-блоки с критериями
+        //    и требованиями к отчёту, которые в `contentBlocks` для студента
+        //    периодически отсутствуют.
+        //  • `contentBlocks` (StudentTopicContentBlock) — мета по студенту:
+        //    дедлайн, баллы, окно сдачи. Без `body`/`name` дублей.
+        // Берём `content.blocks` как источник истины по составу темы и
+        // накладываем студенческую мету из `contentBlocks` по id.
+        struct StudentMeta {
+            let testScore: Double?
+            let taskDeadline: String?
+            let passDate: String?
+        }
+        var metaById: [String: StudentMeta] = [:]
+        for b in st.contentBlocks {
+            let id = b.contentBlock.asInfoDisciplineTopicContentBlock?.id
+                ?? b.contentBlock.asTaskDisciplineTopicContentBlock?.id
+                ?? b.contentBlock.asTestDisciplineTopicContentBlock?.id
+                ?? b.contentBlockId
+            metaById[id] = StudentMeta(
+                testScore: b.testScore,
+                taskDeadline: b.taskDeadline,
+                passDate: b.passDate
+            )
+        }
+
+        let blocks: [TopicContentBlock] = st.topic.content.blocks
             .sorted { lhs, rhs in
-                let lo = lhs.contentBlock.asTaskDisciplineTopicContentBlock?.order
-                    ?? lhs.contentBlock.asTestDisciplineTopicContentBlock?.order
-                    ?? lhs.contentBlock.asInfoDisciplineTopicContentBlock?.order
+                let lo = lhs.asTaskDisciplineTopicContentBlock?.order
+                    ?? lhs.asTestDisciplineTopicContentBlock?.order
+                    ?? lhs.asInfoDisciplineTopicContentBlock?.order
                     ?? 0
-                let ro = rhs.contentBlock.asTaskDisciplineTopicContentBlock?.order
-                    ?? rhs.contentBlock.asTestDisciplineTopicContentBlock?.order
-                    ?? rhs.contentBlock.asInfoDisciplineTopicContentBlock?.order
+                let ro = rhs.asTaskDisciplineTopicContentBlock?.order
+                    ?? rhs.asTestDisciplineTopicContentBlock?.order
+                    ?? rhs.asInfoDisciplineTopicContentBlock?.order
                     ?? 0
                 return lo < ro
             }
             .map { b -> TopicContentBlock in
+                let info = b.asInfoDisciplineTopicContentBlock
+                let task = b.asTaskDisciplineTopicContentBlock
+                let test = b.asTestDisciplineTopicContentBlock
                 let kind: ContentBlockKind = {
-                    switch b.kind {
-                    case .case(.info): return .info
-                    case .case(.task): return .task
-                    case .case(.test): return .test
-                    default: return .info
-                    }
+                    if task != nil { return .task }
+                    if test != nil { return .test }
+                    return .info
                 }()
-                let info = b.contentBlock.asInfoDisciplineTopicContentBlock
-                let task = b.contentBlock.asTaskDisciplineTopicContentBlock
-                let test = b.contentBlock.asTestDisciplineTopicContentBlock
-                let id = info?.id ?? task?.id ?? test?.id ?? b.contentBlockId
+                let id = info?.id ?? task?.id ?? test?.id ?? UUID().uuidString
                 let name = info?.name ?? task?.name ?? test?.name ?? "Блок"
                 let body = info?.body ?? task?.body ?? test?.body ?? ""
                 let maxScore = task?.maxScore ?? test?.maxScore
+                let meta = metaById[id]
                 return TopicContentBlock(
                     id: id,
                     kind: kind,
                     name: name,
                     body: body,
                     maxScore: maxScore,
-                    score: b.testScore,
-                    deadline: LXPMapping.date(b.taskDeadline),
-                    passDate: LXPMapping.date(b.passDate)
+                    score: meta?.testScore,
+                    deadline: LXPMapping.date(meta?.taskDeadline),
+                    passDate: LXPMapping.date(meta?.passDate)
                 )
             }
         return TopicDetail(topic: topic, howToStudy: st.topic.content.howStudyIt, blocks: blocks)
@@ -293,6 +319,7 @@ enum TopicRepository {
         return String(format: "%.1f", order)
     }
 }
+
 
 enum TasksRepository {
     /// Загружает все доступные студенту задания/КТ. Прежде была одна страница
